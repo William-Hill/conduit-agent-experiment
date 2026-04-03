@@ -1,8 +1,9 @@
-package agents
+package agents_test
 
 import (
 	"testing"
 
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/agents"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/models"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/orchestrator"
 )
@@ -19,7 +20,7 @@ func TestTriageAccept(t *testing.T) {
 	}
 	policy := orchestrator.DefaultPhase1Policy()
 
-	decision := Triage(task, dossier, policy)
+	decision := agents.Triage(task, dossier, policy)
 	if decision.Decision != "accept" {
 		t.Errorf("decision = %q, want accept", decision.Decision)
 	}
@@ -34,7 +35,7 @@ func TestTriageRejectDifficulty(t *testing.T) {
 	dossier := models.Dossier{TaskID: "task-002"}
 	policy := orchestrator.DefaultPhase1Policy()
 
-	decision := Triage(task, dossier, policy)
+	decision := agents.Triage(task, dossier, policy)
 	if decision.Decision != "reject" {
 		t.Errorf("decision = %q, want reject", decision.Decision)
 	}
@@ -49,7 +50,7 @@ func TestTriageRejectBlastRadius(t *testing.T) {
 	dossier := models.Dossier{TaskID: "task-003"}
 	policy := orchestrator.DefaultPhase1Policy()
 
-	decision := Triage(task, dossier, policy)
+	decision := agents.Triage(task, dossier, policy)
 	if decision.Decision != "reject" {
 		t.Errorf("decision = %q, want reject", decision.Decision)
 	}
@@ -68,7 +69,7 @@ func TestTriageDefer(t *testing.T) {
 	}
 	policy := orchestrator.DefaultPhase1Policy()
 
-	decision := Triage(task, dossier, policy)
+	decision := agents.Triage(task, dossier, policy)
 	if decision.Decision != "defer" {
 		t.Errorf("decision = %q, want defer", decision.Decision)
 	}

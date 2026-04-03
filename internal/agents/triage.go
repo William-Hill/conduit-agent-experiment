@@ -2,8 +2,12 @@ package agents
 
 import (
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/models"
-	"github.com/mjhilldigital/conduit-agent-experiment/internal/orchestrator"
 )
+
+// PolicyChecker is satisfied by any type that can validate a task against a policy.
+type PolicyChecker interface {
+	CheckTask(models.Task) error
+}
 
 // TriageDecision records the triage outcome for a task.
 type TriageDecision struct {
@@ -12,7 +16,7 @@ type TriageDecision struct {
 }
 
 // Triage evaluates whether a task should proceed based on policy and dossier quality.
-func Triage(task models.Task, dossier models.Dossier, policy orchestrator.Policy) TriageDecision {
+func Triage(task models.Task, dossier models.Dossier, policy PolicyChecker) TriageDecision {
 	if err := policy.CheckTask(task); err != nil {
 		return TriageDecision{
 			Decision: "reject",
