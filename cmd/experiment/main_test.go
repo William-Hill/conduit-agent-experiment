@@ -1,28 +1,28 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/config"
-	"github.com/mjhilldigital/conduit-agent-experiment/internal/ingest"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/models"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/orchestrator"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/reporting"
-	"github.com/mjhilldigital/conduit-agent-experiment/internal/retrieval"
 )
 
 func TestEndToEnd(t *testing.T) {
-	// Set up a fake target repo.
 	repoDir := t.TempDir()
 	repoFiles := map[string]string{
 		"README.md":                              "# Conduit\nA streaming data platform.",
 		"docs/pipeline-config.md":                "# Pipeline Config\nYAML-based pipeline configuration.",
 		"docs/design-documents/001-pipelines.md": "# ADR: Pipeline Design",
 		"internal/pipeline/pipeline.go":          "package pipeline",
-		"Makefile":                               "test:\n\tgo test ./...",
+		"Makefile":                               "test:\n\techo ok",
 	}
 	for relPath, content := range repoFiles {
 		full := filepath.Join(repoDir, relPath)
@@ -34,119 +34,84 @@ func TestEndToEnd(t *testing.T) {
 		}
 	}
 
-	// Set up config.
-	cfgDir := t.TempDir()
-	cfgContent := []byte(`target:
-  repo_path: "` + repoDir + `"
-  ref: "main"
-reporting:
-  output_dir: "` + filepath.Join(cfgDir, "runs") + `"
-  formats:
-    - json
-    - markdown
-`)
-	cfgPath := filepath.Join(cfgDir, "experiment.yaml")
-	if err := os.WriteFile(cfgPath, cfgContent, 0644); err != nil {
-		t.Fatal(err)
+	llmResp := `{"summary":"Enhanced task summary","relevant_files":["README.md"],"relevant_docs":["docs/design-documents/001-pipelines.md"],"suggested_commands":["echo test"],"risks":["none"],"open_questions":[]}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"id": "test", "object": "chat.completion", "created": 0, "model": "test",
+			"choices": []map[string]any{{
+				"index":         0,
+				"message":       map[string]any{"role": "assistant", "content": llmResp},
+				"finish_reason": "stop",
+			}},
+			"usage": map[string]any{"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	outDir := t.TempDir()
+	cfg := config.Config{
+		Target:    config.TargetConfig{RepoPath: repoDir, Ref: "main"},
+		Execution: config.ExecutionConfig{UseWorktree: false, TimeoutSeconds: 10},
+		Reporting: config.ReportingConfig{OutputDir: outDir},
+	}
+	mcfg := config.ModelsConfig{
+		Provider: config.ProviderConfig{BaseURL: server.URL},
+		Roles:    map[string]config.RoleConfig{"archivist": {Model: "test"}},
+		APIKey:   "test-key",
 	}
 
-	// Set up task.
 	task := models.Task{
-		ID:                 "task-001",
-		Title:              "Fix docs drift in pipeline config example",
-		Source:             "seeded",
-		Description:        "Update pipeline configuration docs to match current behavior.",
-		Labels:             []string{"docs", "pipeline", "config"},
-		Difficulty:         models.DifficultyL1,
-		BlastRadius:        models.BlastRadiusLow,
-		AcceptanceCriteria: []string{"Docs updated"},
-		Status:             models.TaskStatusPending,
+		ID:          "task-001",
+		Title:       "Fix docs drift in pipeline config example",
+		Source:      "seeded",
+		Description: "Update pipeline configuration docs.",
+		Labels:      []string{"docs", "pipeline"},
+		Difficulty:  models.DifficultyL1,
+		BlastRadius: models.BlastRadiusLow,
+		Status:      models.TaskStatusPending,
 	}
 
-	// Load config.
-	cfg, err := config.Load(cfgPath)
+	result, err := orchestrator.RunWorkflow(context.Background(), task, cfg, mcfg)
 	if err != nil {
-		t.Fatalf("config.Load() error: %v", err)
+		t.Fatalf("RunWorkflow() error: %v", err)
 	}
 
-	// Policy check.
-	policy := orchestrator.DefaultPhase1Policy()
-	if err := policy.CheckTask(task); err != nil {
-		t.Fatalf("policy check failed: %v", err)
+	if result.TriageDecision.Decision != "accept" {
+		t.Fatalf("triage = %q, want accept", result.TriageDecision.Decision)
+	}
+	if result.Run.FinalStatus != models.RunStatusSuccess {
+		t.Errorf("status = %q, want success", result.Run.FinalStatus)
 	}
 
-	// Ingest.
-	inv, err := ingest.WalkRepo(cfg.Target.RepoPath)
+	runDir := filepath.Join(outDir, result.Run.ID)
+	os.MkdirAll(runDir, 0755)
+
+	if err := reporting.WriteRunJSON(runDir, result.Run); err != nil {
+		t.Fatalf("WriteRunJSON error: %v", err)
+	}
+	if err := reporting.WriteDossierJSON(runDir, result.Dossier); err != nil {
+		t.Fatalf("WriteDossierJSON error: %v", err)
+	}
+	md, err := reporting.RenderMarkdown(result.Run, result.Dossier, result.Task)
 	if err != nil {
-		t.Fatalf("WalkRepo() error: %v", err)
+		t.Fatalf("RenderMarkdown error: %v", err)
 	}
-	if len(inv.Files) == 0 {
-		t.Fatal("expected files in inventory")
-	}
+	os.WriteFile(filepath.Join(runDir, "report.md"), []byte(md), 0644)
 
-	// Build dossier.
-	dossier := retrieval.BuildDossier(task, inv)
-	if dossier.TaskID != "task-001" {
-		t.Errorf("dossier task ID = %q, want task-001", dossier.TaskID)
-	}
-	if len(dossier.RelatedFiles) == 0 && len(dossier.RelatedDocs) == 0 {
-		t.Error("dossier has no related files or docs")
-	}
-
-	// Create run.
-	run := models.Run{
-		ID:            "run-test-001",
-		TaskID:        task.ID,
-		AgentsInvoked: []string{"archivist"},
-		FinalStatus:   models.RunStatusSuccess,
-		HumanDecision: models.HumanDecisionPending,
-	}
-
-	// Write outputs.
-	outDir := filepath.Join(cfg.Reporting.OutputDir, run.ID)
-	if err := os.MkdirAll(outDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := reporting.WriteRunJSON(outDir, run); err != nil {
-		t.Fatalf("WriteRunJSON() error: %v", err)
-	}
-	if err := reporting.WriteDossierJSON(outDir, dossier); err != nil {
-		t.Fatalf("WriteDossierJSON() error: %v", err)
-	}
-
-	md, err := reporting.RenderMarkdown(run, dossier, task)
-	if err != nil {
-		t.Fatalf("RenderMarkdown() error: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(outDir, "report.md"), []byte(md), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Verify outputs exist.
 	for _, name := range []string{"run.json", "dossier.json", "report.md"} {
-		path := filepath.Join(outDir, name)
-		if _, err := os.Stat(path); err != nil {
+		if _, err := os.Stat(filepath.Join(runDir, name)); err != nil {
 			t.Errorf("expected %s to exist: %v", name, err)
 		}
 	}
 
-	// Verify run.json is valid.
-	runData, _ := os.ReadFile(filepath.Join(outDir, "run.json"))
+	runData, _ := os.ReadFile(filepath.Join(runDir, "run.json"))
 	var loadedRun models.Run
 	if err := json.Unmarshal(runData, &loadedRun); err != nil {
 		t.Fatalf("run.json invalid: %v", err)
 	}
-	if loadedRun.ID != "run-test-001" {
-		t.Errorf("loaded run ID = %q, want run-test-001", loadedRun.ID)
-	}
-
-	// Verify dossier.json is valid.
-	dossierData, _ := os.ReadFile(filepath.Join(outDir, "dossier.json"))
-	var loadedDossier models.Dossier
-	if err := json.Unmarshal(dossierData, &loadedDossier); err != nil {
-		t.Fatalf("dossier.json invalid: %v", err)
-	}
-	if loadedDossier.TaskID != "task-001" {
-		t.Errorf("loaded dossier task ID = %q, want task-001", loadedDossier.TaskID)
+	if loadedRun.TriageDecision != "accept" {
+		t.Errorf("run.json triage = %q, want accept", loadedRun.TriageDecision)
 	}
 }
