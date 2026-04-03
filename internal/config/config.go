@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -88,6 +89,10 @@ func LoadModels(path string) (ModelsConfig, error) {
 	}
 
 	mcfg.APIKey = os.Getenv("GEMINI_API_KEY")
+
+	if strings.TrimSpace(mcfg.Provider.BaseURL) == "" {
+		return ModelsConfig{}, fmt.Errorf("models config: provider.base_url is required")
+	}
 
 	return mcfg, nil
 }

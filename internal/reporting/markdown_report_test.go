@@ -21,7 +21,7 @@ func TestRenderMarkdown(t *testing.T) {
 		TriageDecision:  "accept",
 		TriageReason:    "task within policy limits",
 		VerifierPass:    &pass,
-		VerifierSummary: "3/3 commands passed",
+		VerifierSummary: "2/2 commands passed",
 		CommandsRun: []models.CommandLog{
 			{Command: "make test", ExitCode: 0, Stdout: "ok"},
 			{Command: "go build ./...", ExitCode: 0, Stdout: ""},
@@ -68,7 +68,7 @@ func TestRenderMarkdown(t *testing.T) {
 		"accept",
 		"task within policy limits",
 		"## Verification",
-		"3/3 commands passed",
+		"2/2 commands passed",
 		"## Run Details",
 	}
 	for _, want := range checks {

@@ -71,7 +71,7 @@ func TestEnhanceDossier(t *testing.T) {
 		OpenQuestions:  []string{"original question"},
 	}
 
-	enhanced, llmCall, err := EnhanceDossier(context.Background(), client, task, original)
+	enhanced, llmCall, err := EnhanceDossier(context.Background(), client, "gemini-2.5-flash", task, original)
 	if err != nil {
 		t.Fatalf("EnhanceDossier() error: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestEnhanceDossierFallback(t *testing.T) {
 		Summary: "original summary",
 	}
 
-	enhanced, _, err := EnhanceDossier(context.Background(), client, task, original)
+	enhanced, _, err := EnhanceDossier(context.Background(), client, "gemini-2.5-flash", task, original)
 	if err != nil {
 		t.Fatalf("expected fallback, not error: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestEnhanceDossierBadJSON(t *testing.T) {
 		Summary: "original summary",
 	}
 
-	enhanced, _, err := EnhanceDossier(context.Background(), client, task, original)
+	enhanced, _, err := EnhanceDossier(context.Background(), client, "gemini-2.5-flash", task, original)
 	if err != nil {
 		t.Fatalf("expected fallback on bad JSON, not error: %v", err)
 	}

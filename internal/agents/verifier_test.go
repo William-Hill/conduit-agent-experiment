@@ -15,7 +15,7 @@ func TestVerifyAllPass(t *testing.T) {
 	}
 
 	dossier := models.Dossier{
-		LikelyCommands: []string{"echo test1", "true"},
+		LikelyCommands: []string{"echo test1", "echo test2"},
 	}
 
 	report := Verify(context.Background(), runner, dossier)
@@ -34,7 +34,7 @@ func TestVerifyWithFailure(t *testing.T) {
 	}
 
 	dossier := models.Dossier{
-		LikelyCommands: []string{"true", "false", "echo after"},
+		LikelyCommands: []string{"echo ok", "rm -rf /should-be-blocked", "echo after"},
 	}
 
 	report := Verify(context.Background(), runner, dossier)

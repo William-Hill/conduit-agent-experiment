@@ -30,6 +30,31 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 	runID := fmt.Sprintf("run-%s-%s", task.ID, startTime.Format("20060102-150405"))
 	agentsInvoked := []string{}
 
+	// Triage first — reject out-of-policy tasks before any LLM calls or repo ingestion.
+	policy := DefaultPhase1Policy()
+	triageDecision := agents.Triage(task, models.Dossier{TaskID: task.ID}, policy)
+	agentsInvoked = append(agentsInvoked, "triage")
+
+	if triageDecision.Decision == "reject" {
+		run := models.Run{
+			ID:             runID,
+			TaskID:         task.ID,
+			StartedAt:      startTime,
+			AgentsInvoked:  agentsInvoked,
+			TriageDecision: triageDecision.Decision,
+			TriageReason:   triageDecision.Reason,
+			FinalStatus:    models.RunStatusRejected,
+			HumanDecision:  models.HumanDecisionPending,
+			EndedAt:        time.Now(),
+		}
+		return &WorkflowResult{
+			Run:            run,
+			Dossier:        models.Dossier{TaskID: task.ID},
+			Task:           task,
+			TriageDecision: triageDecision,
+		}, nil
+	}
+
 	inv, err := ingest.WalkRepo(cfg.Target.RepoPath)
 	if err != nil {
 		return nil, fmt.Errorf("walking repo: %w", err)
@@ -42,17 +67,13 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 		archModel = rc.Model
 	}
 	llmClient := llm.NewClient(mcfg.Provider.BaseURL, mcfg.APIKey, archModel)
-	enhanced, llmCall, err := agents.EnhanceDossier(ctx, llmClient, task, dossier)
+	enhanced, llmCall, err := agents.EnhanceDossier(ctx, llmClient, archModel, task, dossier)
 	if err != nil {
 		return nil, fmt.Errorf("archivist: %w", err)
 	}
 	dossier = enhanced
 	llmCalls = append(llmCalls, llmCall)
 	agentsInvoked = append(agentsInvoked, "archivist")
-
-	policy := DefaultPhase1Policy()
-	triageDecision := agents.Triage(task, dossier, policy)
-	agentsInvoked = append(agentsInvoked, "triage")
 
 	run := models.Run{
 		ID:             runID,
@@ -65,12 +86,8 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 		HumanDecision:  models.HumanDecisionPending,
 	}
 
-	if triageDecision.Decision != "accept" {
-		status := models.RunStatusRejected
-		if triageDecision.Decision == "defer" {
-			status = models.RunStatusFailed
-		}
-		run.FinalStatus = status
+	if triageDecision.Decision == "defer" {
+		run.FinalStatus = models.RunStatusFailed
 		run.EndedAt = time.Now()
 		return &WorkflowResult{
 			Run:            run,

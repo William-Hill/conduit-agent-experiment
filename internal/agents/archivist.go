@@ -35,7 +35,7 @@ type archivistResponse struct {
 
 // EnhanceDossier uses an LLM to improve the keyword-based dossier.
 // On LLM failure or bad response, it returns the original dossier unchanged.
-func EnhanceDossier(ctx context.Context, client *llm.Client, task models.Task, original models.Dossier) (models.Dossier, models.LLMCall, error) {
+func EnhanceDossier(ctx context.Context, client *llm.Client, modelName string, task models.Task, original models.Dossier) (models.Dossier, models.LLMCall, error) {
 	userPrompt := buildArchivistPrompt(task, original)
 
 	start := time.Now()
@@ -44,7 +44,7 @@ func EnhanceDossier(ctx context.Context, client *llm.Client, task models.Task, o
 
 	call := models.LLMCall{
 		Agent:    "archivist",
-		Model:    "gemini-2.5-flash",
+		Model:    modelName,
 		Prompt:   userPrompt,
 		Response: response,
 		Duration: duration.String(),

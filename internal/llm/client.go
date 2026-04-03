@@ -26,7 +26,7 @@ func NewClient(baseURL, apiKey, model string) *Client {
 // Complete sends a system+user prompt and returns the assistant response.
 func (c *Client) Complete(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
 	resp, err := c.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-		Model: c.model,
+		Model: openai.ChatModel(c.model),
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage(systemPrompt),
 			openai.UserMessage(userPrompt),

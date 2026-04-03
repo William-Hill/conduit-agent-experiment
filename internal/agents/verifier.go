@@ -16,7 +16,27 @@ type VerifierReport struct {
 	Summary     string              `json:"summary"`
 }
 
+// allowedCommandPrefixes defines which commands the verifier is permitted to run.
+// Commands not matching any prefix are blocked to prevent LLM-influenced injection.
+var allowedCommandPrefixes = []string{
+	"go test", "go vet", "go build",
+	"make", "grep",
+	"golangci-lint",
+	"echo",
+}
+
+func isAllowedCommand(cmd string) bool {
+	c := strings.TrimSpace(cmd)
+	for _, p := range allowedCommandPrefixes {
+		if strings.HasPrefix(c, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // Verify runs each command from the dossier and collects results.
+// Commands not matching the allowlist are blocked and recorded as failures.
 func Verify(ctx context.Context, runner *execution.CommandRunner, dossier models.Dossier) VerifierReport {
 	if len(dossier.LikelyCommands) == 0 {
 		return VerifierReport{
@@ -28,6 +48,15 @@ func Verify(ctx context.Context, runner *execution.CommandRunner, dossier models
 	var commands []models.CommandLog
 	var failed []string
 	for _, cmd := range dossier.LikelyCommands {
+		if !isAllowedCommand(cmd) {
+			commands = append(commands, models.CommandLog{
+				Command:  cmd,
+				ExitCode: -1,
+				Stderr:   "blocked by verifier policy: command not allowlisted",
+			})
+			failed = append(failed, cmd)
+			continue
+		}
 		log := runner.Run(ctx, cmd)
 		commands = append(commands, log)
 		if log.ExitCode != 0 {
