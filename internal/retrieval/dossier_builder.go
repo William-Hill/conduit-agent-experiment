@@ -8,17 +8,26 @@ import (
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/models"
 )
 
+var stopWords = map[string]bool{
+	"the": true, "a": true, "an": true, "in": true, "of": true,
+	"to": true, "and": true, "for": true, "is": true, "it": true,
+	"that": true, "this": true, "with": true, "from": true, "or": true,
+	"be": true, "are": true, "was": true, "were": true, "been": true,
+	"has": true, "have": true, "had": true, "do": true, "does": true,
+	"did": true, "will": true, "would": true, "could": true, "should": true,
+	"may": true, "can": true, "not": true, "no": true, "any": true,
+	"all": true, "each": true, "but": true, "if": true, "by": true,
+	"on": true, "at": true, "up": true, "so": true, "as": true,
+}
+
 // BuildDossier assembles a Dossier for the given task using the file inventory
 // and keyword-based search. This is the phase-1 retrieval strategy (no embeddings).
 func BuildDossier(task models.Task, inv *ingest.FileInventory) models.Dossier {
 	keywords := extractKeywords(task)
 
-	// Search by path keywords.
 	pathResults := SearchByKeyword(inv, keywords)
-	// Search by content keywords.
 	contentResults := SearchByContent(inv, keywords)
 
-	// Merge and deduplicate results.
 	seen := make(map[string]bool)
 	var relatedFiles []string
 	var relatedDocs []string
@@ -43,7 +52,6 @@ func BuildDossier(task models.Task, inv *ingest.FileInventory) models.Dossier {
 		addResult(r)
 	}
 
-	// Also include any ADRs not already found via search.
 	for _, f := range inv.FilesByCategory(ingest.CategoryADR) {
 		if !seen[f.Path] {
 			relatedDocs = append(relatedDocs, f.Path)
@@ -51,10 +59,7 @@ func BuildDossier(task models.Task, inv *ingest.FileInventory) models.Dossier {
 		}
 	}
 
-	// Determine likely commands based on what's in the repo.
-	commands := determineLikelyCommands(task, inv)
-
-	// Determine risks.
+	commands := determineLikelyCommands(inv)
 	risks := determineRisks(task, relatedFiles)
 
 	return models.Dossier{
@@ -68,12 +73,10 @@ func BuildDossier(task models.Task, inv *ingest.FileInventory) models.Dossier {
 	}
 }
 
-// extractKeywords pulls search terms from the task's title, description, and labels.
 func extractKeywords(task models.Task) []string {
 	seen := make(map[string]bool)
 	var keywords []string
 
-	// Add labels directly.
 	for _, label := range task.Labels {
 		lower := strings.ToLower(label)
 		if !seen[lower] && len(lower) > 2 {
@@ -82,23 +85,10 @@ func extractKeywords(task models.Task) []string {
 		}
 	}
 
-	// Extract significant words from title and description.
-	stopWords := map[string]bool{
-		"the": true, "a": true, "an": true, "in": true, "of": true,
-		"to": true, "and": true, "for": true, "is": true, "it": true,
-		"that": true, "this": true, "with": true, "from": true, "or": true,
-		"be": true, "are": true, "was": true, "were": true, "been": true,
-		"has": true, "have": true, "had": true, "do": true, "does": true,
-		"did": true, "will": true, "would": true, "could": true, "should": true,
-		"may": true, "can": true, "not": true, "no": true, "any": true,
-		"all": true, "each": true, "but": true, "if": true, "by": true,
-		"on": true, "at": true, "up": true, "so": true, "as": true,
-	}
-
 	for _, text := range []string{task.Title, task.Description} {
 		words := strings.Fields(strings.ToLower(text))
 		for _, w := range words {
-			w = strings.Trim(w, ".,;:!?\"'()[]{}") // strip punctuation
+			w = strings.Trim(w, ".,;:!?\"'()[]{}")
 			if len(w) > 2 && !stopWords[w] && !seen[w] {
 				seen[w] = true
 				keywords = append(keywords, w)
@@ -109,8 +99,7 @@ func extractKeywords(task models.Task) []string {
 	return keywords
 }
 
-// determineLikelyCommands suggests commands based on what's in the repo.
-func determineLikelyCommands(task models.Task, inv *ingest.FileInventory) []string {
+func determineLikelyCommands(inv *ingest.FileInventory) []string {
 	var commands []string
 
 	hasMakefile := false
@@ -143,7 +132,6 @@ func determineLikelyCommands(task models.Task, inv *ingest.FileInventory) []stri
 	return commands
 }
 
-// determineRisks identifies potential risks based on files affected.
 func determineRisks(task models.Task, files []string) []string {
 	var risks []string
 

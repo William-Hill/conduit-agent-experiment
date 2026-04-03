@@ -3,6 +3,7 @@ package retrieval
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/ingest"
@@ -35,7 +36,7 @@ func SearchByKeyword(inv *ingest.FileInventory, keywords []string) []SearchResul
 			})
 		}
 	}
-	sortByScore(results)
+	sort.Slice(results, func(i, j int) bool { return results[i].Score > results[j].Score })
 	return results
 }
 
@@ -69,16 +70,7 @@ func SearchByContent(inv *ingest.FileInventory, keywords []string) []SearchResul
 			})
 		}
 	}
-	sortByScore(results)
+	sort.Slice(results, func(i, j int) bool { return results[i].Score > results[j].Score })
 	return results
 }
 
-// sortByScore sorts results by score descending using insertion sort
-// (adequate for the small result sets expected here).
-func sortByScore(results []SearchResult) {
-	for i := 1; i < len(results); i++ {
-		for j := i; j > 0 && results[j].Score > results[j-1].Score; j-- {
-			results[j], results[j-1] = results[j-1], results[j]
-		}
-	}
-}

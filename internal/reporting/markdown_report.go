@@ -3,9 +3,16 @@ package reporting
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"text/template"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/models"
+)
+
+var reportTmpl = template.Must(
+	template.New("report").Funcs(template.FuncMap{
+		"joinStrings": strings.Join,
+	}).Parse(reportTemplate),
 )
 
 const reportTemplate = `# Run Report: {{ .Run.ID }}
@@ -69,17 +76,8 @@ type reportData struct {
 
 // RenderMarkdown produces a markdown report for a completed run.
 func RenderMarkdown(run models.Run, dossier models.Dossier, task models.Task) (string, error) {
-	funcMap := template.FuncMap{
-		"joinStrings": joinStrings,
-	}
-
-	tmpl, err := template.New("report").Funcs(funcMap).Parse(reportTemplate)
-	if err != nil {
-		return "", fmt.Errorf("parsing template: %w", err)
-	}
-
 	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, reportData{
+	if err := reportTmpl.Execute(&buf, reportData{
 		Run:     run,
 		Dossier: dossier,
 		Task:    task,
@@ -88,15 +86,4 @@ func RenderMarkdown(run models.Run, dossier models.Dossier, task models.Task) (s
 	}
 
 	return buf.String(), nil
-}
-
-func joinStrings(strs []string, sep string) string {
-	result := ""
-	for i, s := range strs {
-		if i > 0 {
-			result += sep
-		}
-		result += s
-	}
-	return result
 }

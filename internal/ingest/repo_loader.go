@@ -1,7 +1,7 @@
 package ingest
 
 import (
-	"os"
+	"io/fs"
 	"path/filepath"
 	"strings"
 )
@@ -57,7 +57,6 @@ func ClassifyFile(relPath string) FileCategory {
 	dir := filepath.Dir(relPath)
 	ext := filepath.Ext(base)
 
-	// Tests: any file ending in _test.go or under a test/ directory.
 	if strings.HasSuffix(base, "_test.go") {
 		return CategoryTest
 	}
@@ -65,17 +64,14 @@ func ClassifyFile(relPath string) FileCategory {
 		return CategoryTest
 	}
 
-	// Workflows: anything under .github/workflows.
 	if strings.HasPrefix(relPath, ".github/workflows") {
 		return CategoryWorkflow
 	}
 
-	// ADRs: files under docs/design-documents, docs/adr, or named adr-*.
 	if strings.Contains(dir, "design-documents") || strings.Contains(dir, "docs/adr") {
 		return CategoryADR
 	}
 
-	// Docs: markdown files in docs/, README, CONTRIBUTING, CHANGELOG, etc.
 	if strings.HasPrefix(relPath, "docs/") && (ext == ".md" || ext == ".txt" || ext == ".rst") {
 		return CategoryDocs
 	}
@@ -85,7 +81,6 @@ func ClassifyFile(relPath string) FileCategory {
 		return CategoryDocs
 	}
 
-	// Config: yaml, toml, json config files, Makefile, Dockerfile, go.mod, go.sum.
 	switch base {
 	case "Makefile", "Dockerfile", "docker-compose.yml", "docker-compose.yaml",
 		"go.mod", "go.sum", ".goreleaser.yml", ".golangci.yml", ".golangci.yaml":
@@ -98,13 +93,11 @@ func ClassifyFile(relPath string) FileCategory {
 		}
 	}
 
-	// Code: everything else with a code extension.
 	switch ext {
 	case ".go", ".py", ".js", ".ts", ".rs", ".java", ".c", ".h", ".cpp", ".proto", ".sh":
 		return CategoryCode
 	}
 
-	// Fallback: treat as code if no extension matched.
 	return CategoryCode
 }
 
@@ -112,14 +105,13 @@ func ClassifyFile(relPath string) FileCategory {
 func WalkRepo(root string) (*FileInventory, error) {
 	inv := &FileInventory{RepoRoot: root}
 
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
-		// Skip excluded directories.
-		if info.IsDir() {
-			if skipDir(info.Name()) {
+		if d.IsDir() {
+			if skipDir(d.Name()) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -130,9 +122,13 @@ func WalkRepo(root string) (*FileInventory, error) {
 			return err
 		}
 
-		// Skip hidden files (except .github).
 		if strings.HasPrefix(relPath, ".") && !strings.HasPrefix(relPath, ".github") {
 			return nil
+		}
+
+		info, err := d.Info()
+		if err != nil {
+			return err
 		}
 
 		inv.Files = append(inv.Files, FileEntry{

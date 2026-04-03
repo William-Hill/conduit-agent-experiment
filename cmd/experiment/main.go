@@ -78,19 +78,16 @@ func newRunCmd() *cobra.Command {
 				return err
 			}
 
-			// Load task.
 			task, err := loadTask(taskPath)
 			if err != nil {
 				return fmt.Errorf("loading task: %w", err)
 			}
 
-			// Check policy.
 			policy := orchestrator.DefaultPhase1Policy()
 			if err := policy.CheckTask(task); err != nil {
 				return fmt.Errorf("policy violation: %w", err)
 			}
 
-			// Ingest repo.
 			fmt.Printf("Indexing repository at %s...\n", cfg.Target.RepoPath)
 			inv, err := ingest.WalkRepo(cfg.Target.RepoPath)
 			if err != nil {
@@ -98,13 +95,11 @@ func newRunCmd() *cobra.Command {
 			}
 			fmt.Printf("Indexed %d files\n", len(inv.Files))
 
-			// Build dossier.
 			fmt.Println("Building dossier...")
 			dossier := retrieval.BuildDossier(task, inv)
 			fmt.Printf("Found %d related files, %d related docs\n",
 				len(dossier.RelatedFiles), len(dossier.RelatedDocs))
 
-			// Create run record.
 			runID := fmt.Sprintf("run-%s-%s", task.ID, time.Now().Format("20060102-150405"))
 			run := models.Run{
 				ID:            runID,
@@ -115,7 +110,6 @@ func newRunCmd() *cobra.Command {
 				HumanDecision: models.HumanDecisionPending,
 			}
 
-			// Create output directory.
 			outDir := filepath.Join(cfg.Reporting.OutputDir, runID)
 			if err := os.MkdirAll(outDir, 0755); err != nil {
 				return fmt.Errorf("creating output dir: %w", err)
@@ -123,7 +117,6 @@ func newRunCmd() *cobra.Command {
 
 			run.EndedAt = time.Now()
 
-			// Write JSON outputs.
 			if err := reporting.WriteRunJSON(outDir, run); err != nil {
 				return fmt.Errorf("writing run JSON: %w", err)
 			}
@@ -131,7 +124,6 @@ func newRunCmd() *cobra.Command {
 				return fmt.Errorf("writing dossier JSON: %w", err)
 			}
 
-			// Write markdown report.
 			md, err := reporting.RenderMarkdown(run, dossier, task)
 			if err != nil {
 				return fmt.Errorf("rendering markdown: %w", err)
