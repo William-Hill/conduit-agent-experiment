@@ -1,0 +1,5 @@
+bin/
+.env
+data/runs/
+data/indexes/
+data/cache/

@@ -1,0 +1,13 @@
+provider: "anthropic"
+
+roles:
+  archivist:
+    model: "claude-sonnet-4-6"
+  triage:
+    model: "claude-sonnet-4-6"
+  implementer:
+    model: "claude-sonnet-4-6"
+  verifier:
+    model: "claude-sonnet-4-6"
+  architect:
+    model: "claude-sonnet-4-6"

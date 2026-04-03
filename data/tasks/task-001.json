@@ -1,0 +1,15 @@
+{
+  "id": "task-001",
+  "title": "Fix docs drift in pipeline config example",
+  "source": "seeded",
+  "description": "Review pipeline configuration examples in docs and update any that no longer match current config behavior.",
+  "labels": ["docs", "drift"],
+  "difficulty": "L1",
+  "blast_radius": "low",
+  "acceptance_criteria": [
+    "Docs updated to match current config behavior",
+    "No code changes required",
+    "Links and formatting validated"
+  ],
+  "status": "pending"
+}

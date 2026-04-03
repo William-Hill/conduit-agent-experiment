@@ -1,0 +1,20 @@
+target:
+  repo_path: "${CONDUIT_REPO_PATH}"
+  ref: "main"
+
+policy:
+  max_difficulty: "L2"
+  max_blast_radius: "medium"
+  allow_push: false
+  allow_merge: false
+  require_rationale: true
+
+execution:
+  use_worktree: true
+  timeout_seconds: 300
+
+reporting:
+  output_dir: "data/runs"
+  formats:
+    - json
+    - markdown
