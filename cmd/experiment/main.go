@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -14,7 +13,6 @@ import (
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/models"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/orchestrator"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/reporting"
-	"github.com/mjhilldigital/conduit-agent-experiment/internal/retrieval"
 )
 
 var cfgFile string
@@ -69,6 +67,7 @@ func newIndexCmd() *cobra.Command {
 
 func newRunCmd() *cobra.Command {
 	var taskPath string
+	var modelsFile string
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Run a task against the target repository",
@@ -78,53 +77,46 @@ func newRunCmd() *cobra.Command {
 				return err
 			}
 
+			mcfg, err := config.LoadModels(modelsFile)
+			if err != nil {
+				return fmt.Errorf("loading models config: %w", err)
+			}
+			if mcfg.APIKey == "" {
+				return fmt.Errorf("GEMINI_API_KEY env var is required")
+			}
+
 			task, err := loadTask(taskPath)
 			if err != nil {
 				return fmt.Errorf("loading task: %w", err)
 			}
 
-			policy := orchestrator.DefaultPhase1Policy()
-			if err := policy.CheckTask(task); err != nil {
-				return fmt.Errorf("policy violation: %w", err)
-			}
-
-			fmt.Printf("Indexing repository at %s...\n", cfg.Target.RepoPath)
-			inv, err := ingest.WalkRepo(cfg.Target.RepoPath)
+			fmt.Printf("Running task %s: %s\n", task.ID, task.Title)
+			result, err := orchestrator.RunWorkflow(cmd.Context(), task, cfg, mcfg)
 			if err != nil {
-				return fmt.Errorf("walking repo: %w", err)
-			}
-			fmt.Printf("Indexed %d files\n", len(inv.Files))
-
-			fmt.Println("Building dossier...")
-			dossier := retrieval.BuildDossier(task, inv)
-			fmt.Printf("Found %d related files, %d related docs\n",
-				len(dossier.RelatedFiles), len(dossier.RelatedDocs))
-
-			runID := fmt.Sprintf("run-%s-%s", task.ID, time.Now().Format("20060102-150405"))
-			run := models.Run{
-				ID:            runID,
-				TaskID:        task.ID,
-				StartedAt:     time.Now(),
-				AgentsInvoked: []string{"archivist"},
-				FinalStatus:   models.RunStatusSuccess,
-				HumanDecision: models.HumanDecisionPending,
+				return fmt.Errorf("workflow failed: %w", err)
 			}
 
-			outDir := filepath.Join(cfg.Reporting.OutputDir, runID)
+			fmt.Printf("Triage: %s (%s)\n", result.TriageDecision.Decision, result.TriageDecision.Reason)
+
+			if result.TriageDecision.Decision != "accept" {
+				fmt.Printf("Task %s, skipping verification\n", result.TriageDecision.Decision)
+			} else {
+				fmt.Printf("Verification: %s\n", result.VerifierReport.Summary)
+			}
+
+			outDir := filepath.Join(cfg.Reporting.OutputDir, result.Run.ID)
 			if err := os.MkdirAll(outDir, 0755); err != nil {
 				return fmt.Errorf("creating output dir: %w", err)
 			}
 
-			run.EndedAt = time.Now()
-
-			if err := reporting.WriteRunJSON(outDir, run); err != nil {
+			if err := reporting.WriteRunJSON(outDir, result.Run); err != nil {
 				return fmt.Errorf("writing run JSON: %w", err)
 			}
-			if err := reporting.WriteDossierJSON(outDir, dossier); err != nil {
+			if err := reporting.WriteDossierJSON(outDir, result.Dossier); err != nil {
 				return fmt.Errorf("writing dossier JSON: %w", err)
 			}
 
-			md, err := reporting.RenderMarkdown(run, dossier, task)
+			md, err := reporting.RenderMarkdown(result.Run, result.Dossier, result.Task)
 			if err != nil {
 				return fmt.Errorf("rendering markdown: %w", err)
 			}
@@ -133,13 +125,14 @@ func newRunCmd() *cobra.Command {
 				return fmt.Errorf("writing report: %w", err)
 			}
 
-			fmt.Printf("\nRun complete: %s\n", runID)
+			fmt.Printf("\nRun complete: %s\n", result.Run.ID)
+			fmt.Printf("Status: %s\n", result.Run.FinalStatus)
 			fmt.Printf("Output: %s/\n", outDir)
-			fmt.Printf("  run.json\n  dossier.json\n  report.md\n")
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&taskPath, "task", "", "path to task JSON file (required)")
+	cmd.Flags().StringVar(&modelsFile, "models", "configs/models.yaml", "models config file path")
 	cmd.MarkFlagRequired("task")
 	return cmd
 }
