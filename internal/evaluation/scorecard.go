@@ -1,1 +1,137 @@
 package evaluation
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/models"
+)
+
+// Scorecard aggregates evaluation results across multiple runs.
+type Scorecard struct {
+	TotalRuns           int            `json:"total_runs"`
+	SuccessfulRuns      int            `json:"successful_runs"`
+	PRsCreated          int            `json:"prs_created"`
+	AvgFilesChanged     float64        `json:"avg_files_changed"`
+	AvgDiffLines        float64        `json:"avg_diff_lines"`
+	AvgLLMCalls         float64        `json:"avg_llm_calls"`
+	SuccessByDifficulty map[string]int `json:"success_by_difficulty"`
+	FailureModes        map[string]int `json:"failure_modes"`
+}
+
+// GenerateScorecard reads all evaluation.json files from subdirectories of
+// runsDir and aggregates the results into a Scorecard.
+func GenerateScorecard(runsDir string) (Scorecard, error) {
+	sc := Scorecard{
+		SuccessByDifficulty: make(map[string]int),
+		FailureModes:        make(map[string]int),
+	}
+
+	entries, err := os.ReadDir(runsDir)
+	if err != nil {
+		return sc, fmt.Errorf("read runs dir %s: %w", runsDir, err)
+	}
+
+	var totalFiles, totalDiff, totalLLM int
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		evalPath := filepath.Join(runsDir, entry.Name(), "evaluation.json")
+		data, err := os.ReadFile(evalPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return sc, fmt.Errorf("read %s: %w", evalPath, err)
+		}
+
+		var ev models.Evaluation
+		if err := json.Unmarshal(data, &ev); err != nil {
+			return sc, fmt.Errorf("unmarshal %s: %w", evalPath, err)
+		}
+
+		sc.TotalRuns++
+		totalFiles += ev.FilesChanged
+		totalDiff += ev.DiffLines
+		totalLLM += ev.LLMCalls
+
+		if ev.ImplementerSuccess && ev.VerifierPass {
+			sc.SuccessfulRuns++
+			if ev.Difficulty != "" {
+				sc.SuccessByDifficulty[ev.Difficulty]++
+			}
+		}
+
+		if ev.PRCreated {
+			sc.PRsCreated++
+		}
+
+		if ev.FailureMode != "" {
+			sc.FailureModes[string(ev.FailureMode)]++
+		}
+	}
+
+	if sc.TotalRuns > 0 {
+		sc.AvgFilesChanged = float64(totalFiles) / float64(sc.TotalRuns)
+		sc.AvgDiffLines = float64(totalDiff) / float64(sc.TotalRuns)
+		sc.AvgLLMCalls = float64(totalLLM) / float64(sc.TotalRuns)
+	}
+
+	return sc, nil
+}
+
+// FormatScorecard returns a human-readable markdown table representation of sc.
+func FormatScorecard(sc Scorecard) string {
+	var sb strings.Builder
+
+	sb.WriteString("# Scorecard\n\n")
+
+	sb.WriteString("## Summary\n\n")
+	sb.WriteString("| Metric | Value |\n")
+	sb.WriteString("|--------|-------|\n")
+	sb.WriteString(fmt.Sprintf("| Total Runs | %d |\n", sc.TotalRuns))
+	sb.WriteString(fmt.Sprintf("| Successful Runs | %d |\n", sc.SuccessfulRuns))
+	sb.WriteString(fmt.Sprintf("| PRs Created | %d |\n", sc.PRsCreated))
+	sb.WriteString(fmt.Sprintf("| Avg Files Changed | %.2f |\n", sc.AvgFilesChanged))
+	sb.WriteString(fmt.Sprintf("| Avg Diff Lines | %.2f |\n", sc.AvgDiffLines))
+	sb.WriteString(fmt.Sprintf("| Avg LLM Calls | %.2f |\n", sc.AvgLLMCalls))
+
+	if len(sc.SuccessByDifficulty) > 0 {
+		sb.WriteString("\n## Success by Difficulty\n\n")
+		sb.WriteString("| Difficulty | Successes |\n")
+		sb.WriteString("|------------|----------|\n")
+
+		keys := make([]string, 0, len(sc.SuccessByDifficulty))
+		for k := range sc.SuccessByDifficulty {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			sb.WriteString(fmt.Sprintf("| %s | %d |\n", k, sc.SuccessByDifficulty[k]))
+		}
+	}
+
+	if len(sc.FailureModes) > 0 {
+		sb.WriteString("\n## Failure Modes\n\n")
+		sb.WriteString("| Failure Mode | Count |\n")
+		sb.WriteString("|-------------|-------|\n")
+
+		keys := make([]string, 0, len(sc.FailureModes))
+		for k := range sc.FailureModes {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			sb.WriteString(fmt.Sprintf("| %s | %d |\n", k, sc.FailureModes[k]))
+		}
+	}
+
+	return sb.String()
+}
