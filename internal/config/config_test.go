@@ -101,6 +101,49 @@ roles:
 	}
 }
 
+func TestLoadGitHubConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "experiment.yaml")
+	content := []byte(`target:
+  repo_path: "/tmp/conduit"
+  ref: "main"
+github:
+  owner: "ConduitIO"
+  repo: "conduit"
+  fork_owner: "William-Hill"
+  base_branch: "main"
+policy:
+  max_files_changed: 10
+reporting:
+  output_dir: "data/runs"
+  formats:
+    - json
+`)
+	if err := os.WriteFile(cfgPath, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.GitHub.Owner != "ConduitIO" {
+		t.Errorf("GitHub.Owner = %q, want ConduitIO", cfg.GitHub.Owner)
+	}
+	if cfg.GitHub.Repo != "conduit" {
+		t.Errorf("GitHub.Repo = %q, want conduit", cfg.GitHub.Repo)
+	}
+	if cfg.GitHub.ForkOwner != "William-Hill" {
+		t.Errorf("GitHub.ForkOwner = %q, want William-Hill", cfg.GitHub.ForkOwner)
+	}
+	if cfg.GitHub.BaseBranch != "main" {
+		t.Errorf("GitHub.BaseBranch = %q, want main", cfg.GitHub.BaseBranch)
+	}
+	if cfg.Policy.MaxFilesChanged != 10 {
+		t.Errorf("Policy.MaxFilesChanged = %d, want 10", cfg.Policy.MaxFilesChanged)
+	}
+}
+
 func TestLoadModelsAPIKeyFromEnv(t *testing.T) {
 	dir := t.TempDir()
 	modelsPath := filepath.Join(dir, "models.yaml")
