@@ -118,20 +118,18 @@ func (a *Adapter) GetIssue(ctx context.Context, number int) (*Issue, error) {
 // CreateBranchAndPush creates a branch, stages all changes, commits and pushes
 // in the given worktree directory.
 func (a *Adapter) CreateBranchAndPush(ctx context.Context, worktreeDir, branch, commitMsg string) error {
-	cmds := []string{
-		"git checkout -b " + branch,
-		"git add -A",
-		fmt.Sprintf("git commit -m %q", commitMsg),
-		"git push origin " + branch,
+	cmds := [][]string{
+		{"git", "checkout", "-b", branch},
+		{"git", "add", "-A"},
+		{"git", "commit", "-m", commitMsg},
+		{"git", "push", "origin", branch},
 	}
 
-	for _, c := range cmds {
-		cmd := exec.CommandContext(ctx, "sh", "-c", c)
+	for _, args := range cmds {
+		cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 		cmd.Dir = worktreeDir
-		var stderr bytes.Buffer
-		cmd.Stderr = &stderr
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("running %q in %s: %w\nstderr: %s", c, worktreeDir, err, stderr.String())
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("running %s: %w\n%s", strings.Join(args, " "), err, out)
 		}
 	}
 
@@ -177,10 +175,3 @@ func (a *Adapter) runGH(ctx context.Context, args ...string) (string, error) {
 	return stdout.String(), nil
 }
 
-// runShell creates an exec.Cmd for the given shell command and working directory.
-// Used by tests and by CreateBranchAndPush.
-func runShell(command, dir string) *exec.Cmd {
-	cmd := exec.Command("sh", "-c", command)
-	cmd.Dir = dir
-	return cmd
-}

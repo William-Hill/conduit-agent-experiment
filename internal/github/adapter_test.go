@@ -3,9 +3,17 @@ package github
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
+
+// runShellInDir creates an exec.Cmd for the given shell command and working directory.
+func runShellInDir(command, dir string) *exec.Cmd {
+	cmd := exec.Command("sh", "-c", command)
+	cmd.Dir = dir
+	return cmd
+}
 
 // writeMockScript writes an executable shell script to a temp dir and returns
 // the path to that dir and the script path.
@@ -164,7 +172,7 @@ func TestCreateBranchAndPush(t *testing.T) {
 		"git config --local receive.denyCurrentBranch ignore",
 	}
 	for _, c := range gitCmds {
-		cmd := runShell(c, repoDir)
+		cmd := runShellInDir(c, repoDir)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("setup %q failed: %v\n%s", c, err, out)
 		}
@@ -176,14 +184,14 @@ func TestCreateBranchAndPush(t *testing.T) {
 		"git init --bare",
 	}
 	for _, c := range initCmds {
-		cmd := runShell(c, remoteDir)
+		cmd := runShellInDir(c, remoteDir)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("remote setup %q: %v\n%s", c, err, out)
 		}
 	}
 
 	addRemote := "git remote add origin " + remoteDir
-	if out, err := runShell(addRemote, repoDir).CombinedOutput(); err != nil {
+	if out, err := runShellInDir(addRemote, repoDir).CombinedOutput(); err != nil {
 		t.Fatalf("add remote: %v\n%s", err, out)
 	}
 
@@ -205,7 +213,7 @@ func TestCreateBranchAndPush(t *testing.T) {
 	}
 
 	// Verify the branch was created
-	cmd := runShell("git branch --list test-branch", repoDir)
+	cmd := runShellInDir("git branch --list test-branch", repoDir)
 	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("checking branch: %v", err)
