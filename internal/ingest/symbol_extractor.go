@@ -193,11 +193,13 @@ func exprString(expr ast.Expr) string {
 		return "*" + exprString(t.X)
 	case *ast.SelectorExpr:
 		return exprString(t.X) + "." + t.Sel.Name
+	case *ast.BasicLit:
+		return t.Value
 	case *ast.ArrayType:
 		if t.Len == nil {
 			return "[]" + exprString(t.Elt)
 		}
-		return "[...]" + exprString(t.Elt)
+		return "[" + exprString(t.Len) + "]" + exprString(t.Elt)
 	case *ast.MapType:
 		return "map[" + exprString(t.Key) + "]" + exprString(t.Value)
 	case *ast.InterfaceType:
@@ -217,6 +219,14 @@ func exprString(expr ast.Expr) string {
 		}
 	case *ast.StructType:
 		return "struct{}"
+	case *ast.IndexExpr:
+		return exprString(t.X) + "[" + exprString(t.Index) + "]"
+	case *ast.IndexListExpr:
+		var indices []string
+		for _, idx := range t.Indices {
+			indices = append(indices, exprString(idx))
+		}
+		return exprString(t.X) + "[" + strings.Join(indices, ", ") + "]"
 	}
 	return "unknown"
 }
