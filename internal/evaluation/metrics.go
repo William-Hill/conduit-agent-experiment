@@ -9,7 +9,9 @@ import (
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/models"
 )
 
-// EvalInput collects all pipeline result fields needed to build an Evaluation.
+// EvalInput holds the data needed to build an Evaluation.
+// Fields LintPass, BuildPass, TestsPass, ReviewScore, ArchitectureScore, and Notes
+// are intentionally omitted — deferred to Milestone 3 when per-command categorization is added.
 type EvalInput struct {
 	RunID               string
 	TaskID              string

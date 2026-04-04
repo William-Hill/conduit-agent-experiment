@@ -82,4 +82,10 @@ func TestRankedToTask(t *testing.T) {
 	if task.Difficulty != models.DifficultyL1 {
 		t.Errorf("difficulty = %q, want L1", task.Difficulty)
 	}
+	if task.BlastRadius != models.BlastRadiusLow {
+		t.Errorf("BlastRadius = %q, want low", task.BlastRadius)
+	}
+	if len(task.AcceptanceCriteria) != 1 || task.AcceptanceCriteria[0] != "Fix it" {
+		t.Errorf("AcceptanceCriteria = %v, want [Fix it]", task.AcceptanceCriteria)
+	}
 }

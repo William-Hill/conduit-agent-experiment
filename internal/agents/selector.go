@@ -103,17 +103,41 @@ func RankIssues(ctx context.Context, client *llm.Client, modelName string, issue
 
 // RankedToTask converts a RankedIssue and its GitHub Issue into a Task.
 func RankedToTask(ranked RankedIssue, issue github.Issue) models.Task {
+	difficulty := models.Difficulty(ranked.Difficulty)
+	if !isValidDifficulty(difficulty) {
+		difficulty = models.DifficultyL2
+	}
+	blastRadius := models.BlastRadius(ranked.BlastRadius)
+	if !isValidBlastRadius(blastRadius) {
+		blastRadius = models.BlastRadiusMedium
+	}
 	return models.Task{
 		ID:                 fmt.Sprintf("task-gh-%d", ranked.Number),
 		Title:              issue.Title,
 		Source:             fmt.Sprintf("github#%d", ranked.Number),
 		Description:        issue.Body,
-		Difficulty:         models.Difficulty(ranked.Difficulty),
-		BlastRadius:        models.BlastRadius(ranked.BlastRadius),
+		Difficulty:         difficulty,
+		BlastRadius:        blastRadius,
 		AcceptanceCriteria: ranked.AcceptanceCriteria,
 		IssueNumber:        ranked.Number,
 		Status:             models.TaskStatusPending,
 	}
+}
+
+func isValidDifficulty(d models.Difficulty) bool {
+	switch d {
+	case models.DifficultyL1, models.DifficultyL2, models.DifficultyL3, models.DifficultyL4:
+		return true
+	}
+	return false
+}
+
+func isValidBlastRadius(b models.BlastRadius) bool {
+	switch b {
+	case models.BlastRadiusLow, models.BlastRadiusMedium, models.BlastRadiusHigh:
+		return true
+	}
+	return false
 }
 
 func buildSelectorPrompt(issues []github.Issue) string {

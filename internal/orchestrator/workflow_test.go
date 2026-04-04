@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/agents"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/config"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/models"
 )
@@ -70,7 +71,7 @@ func TestRunWorkflowAccepted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunWorkflow() error: %v", err)
 	}
-	if result.TriageDecision.Decision != "accept" {
+	if result.TriageDecision.Decision != agents.DecisionAccept {
 		t.Errorf("triage = %q, want accept", result.TriageDecision.Decision)
 	}
 	if result.Run.FinalStatus != models.RunStatusSuccess && result.Run.FinalStatus != models.RunStatusFailed {
@@ -106,7 +107,7 @@ func TestRunWorkflowRejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunWorkflow() error: %v", err)
 	}
-	if result.TriageDecision.Decision != "reject" {
+	if result.TriageDecision.Decision != agents.DecisionReject {
 		t.Errorf("triage = %q, want reject", result.TriageDecision.Decision)
 	}
 	if result.Run.FinalStatus != models.RunStatusRejected {
@@ -130,6 +131,12 @@ func newMultiResponseLLMServer(t *testing.T) *httptest.Server {
 			systemPrompt = req.Messages[0].Content
 		}
 
+		// Match LLM responses to agent roles based on system prompt keywords.
+		// Update these if agent system prompts change:
+		//   "archivist"              -> Archivist dossier enhancement
+		//   "implementing a patch"   -> Implementer Phase 1 (patch plan)
+		//   "Generate the complete"  -> Implementer Phase 2 (code generation)
+		//   "architect"              -> Architect review
 		var content string
 		switch {
 		case strings.Contains(systemPrompt, "archivist"):
@@ -236,8 +243,8 @@ func TestRunWorkflowM2(t *testing.T) {
 	}
 
 	// Verify: ArchitectReview.Recommendation is "approve".
-	if result.ArchitectReview.Recommendation != "approve" {
-		t.Errorf("ArchitectReview.Recommendation = %q, want %q", result.ArchitectReview.Recommendation, "approve")
+	if result.ArchitectReview.Recommendation != agents.RecommendApprove {
+		t.Errorf("ArchitectReview.Recommendation = %q, want %q", result.ArchitectReview.Recommendation, agents.RecommendApprove)
 	}
 
 	// Verify: LLMCalls >= 3 (archivist + implementer plan + implementer code gen + architect).
@@ -256,8 +263,8 @@ func TestRunWorkflowM2(t *testing.T) {
 	}
 
 	// Verify: Run.ArchitectDecision is set.
-	if result.Run.ArchitectDecision != "approve" {
-		t.Errorf("Run.ArchitectDecision = %q, want %q", result.Run.ArchitectDecision, "approve")
+	if result.Run.ArchitectDecision != agents.RecommendApprove {
+		t.Errorf("Run.ArchitectDecision = %q, want %q", result.Run.ArchitectDecision, agents.RecommendApprove)
 	}
 
 	// Verify: PRURL is empty since we passed nil adapter.
