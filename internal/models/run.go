@@ -38,8 +38,13 @@ type Run struct {
 	TriageDecision   string        `json:"triage_decision,omitempty"`
 	TriageReason     string        `json:"triage_reason,omitempty"`
 	VerifierPass     *bool         `json:"verifier_pass,omitempty"`
-	VerifierSummary  string        `json:"verifier_summary,omitempty"`
-	LLMCalls         []LLMCall     `json:"llm_calls,omitempty"`
+	VerifierSummary    string        `json:"verifier_summary,omitempty"`
+	ImplementerPlan    string        `json:"implementer_plan,omitempty"`
+	ImplementerDiff    string        `json:"implementer_diff,omitempty"`
+	ArchitectDecision  string        `json:"architect_decision,omitempty"`
+	ArchitectReview    string        `json:"architect_review,omitempty"`
+	PRURL              string        `json:"pr_url,omitempty"`
+	LLMCalls           []LLMCall     `json:"llm_calls,omitempty"`
 }
 
 // CommandLog records a single command execution during a run.

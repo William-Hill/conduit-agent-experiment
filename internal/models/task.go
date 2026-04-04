@@ -44,5 +44,6 @@ type Task struct {
 	AcceptanceCriteria []string    `json:"acceptance_criteria"`
 	SelectedFiles      []string    `json:"selected_files,omitempty"`
 	RelatedDocs        []string    `json:"related_docs,omitempty"`
+	IssueNumber        int         `json:"issue_number,omitempty"`
 	Status             TaskStatus  `json:"status"`
 }
