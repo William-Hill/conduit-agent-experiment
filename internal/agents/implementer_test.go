@@ -48,8 +48,8 @@ func TestCreatePatchPlan(t *testing.T) {
 		t.Fatalf("CreatePatchPlan() error: %v", err)
 	}
 
-	if plan.Summary != "Update the config file to add the missing field." {
-		t.Errorf("plan_summary = %q, want expected summary", plan.Summary)
+	if plan.PlanSummary != "Update the config file to add the missing field." {
+		t.Errorf("plan_summary = %q, want expected summary", plan.PlanSummary)
 	}
 	if len(plan.FilesToChange) != 1 {
 		t.Errorf("files_to_change = %d, want 1", len(plan.FilesToChange))
@@ -109,7 +109,7 @@ type Config struct {
 	client := llm.NewClient(server.URL, "test-key", "gemini-2.5-flash")
 
 	plan := PatchPlan{
-		Summary: "Add MaxFilesChanged field to Config struct.",
+		PlanSummary: "Add MaxFilesChanged field to Config struct.",
 		FilesToChange: []FileChange{
 			{Path: "internal/config/config.go", Action: "modify", Description: "Add MaxFilesChanged field"},
 		},
@@ -141,7 +141,7 @@ func TestGenerateFileContentStripsMarkdownFences(t *testing.T) {
 
 	client := llm.NewClient(server.URL, "test-key", "gemini-2.5-flash")
 
-	plan := PatchPlan{Summary: "some plan"}
+	plan := PatchPlan{PlanSummary: "some plan"}
 	task := models.Task{ID: "task-001", Title: "test"}
 
 	content, _, err := GenerateFileContent(context.Background(), client, "gemini-2.5-flash", plan, task, "internal/config/config.go", "")

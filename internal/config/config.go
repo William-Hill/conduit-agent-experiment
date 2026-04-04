@@ -84,6 +84,14 @@ type RoleConfig struct {
 	Model string `mapstructure:"model"`
 }
 
+// ModelForRole returns the configured model for a role, or fallback if not set.
+func (m ModelsConfig) ModelForRole(role, fallback string) string {
+	if rc, ok := m.Roles[role]; ok && rc.Model != "" {
+		return rc.Model
+	}
+	return fallback
+}
+
 func LoadModels(path string) (ModelsConfig, error) {
 	v := viper.New()
 	v.SetConfigFile(path)

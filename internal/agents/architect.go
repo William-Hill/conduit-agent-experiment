@@ -5,10 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/llm"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/models"
+)
+
+const (
+	RecommendApprove = "approve"
+	RecommendRevise  = "revise"
+	RecommendReject  = "reject"
 )
 
 const architectSystemPrompt = `You are a senior software architect reviewing a proposed patch for an open source project. Evaluate the patch for architectural alignment, semantic safety, and reviewability.
@@ -58,27 +63,12 @@ type ArchitectReviewResult struct {
 func ArchitectReview(ctx context.Context, client *llm.Client, modelName string, input ArchitectInput) (ArchitectReviewResult, models.LLMCall, error) {
 	userPrompt := buildArchitectPrompt(input)
 
-	start := time.Now()
-	response, err := client.Complete(ctx, architectSystemPrompt, userPrompt)
-	duration := time.Since(start)
-
-	call := models.LLMCall{
-		Agent:    "architect",
-		Model:    modelName,
-		Prompt:   userPrompt,
-		Response: response,
-		Duration: duration.String(),
-	}
-
+	response, call, err := callLLM(ctx, client, "architect", modelName, architectSystemPrompt, userPrompt)
 	if err != nil {
 		return ArchitectReviewResult{}, call, fmt.Errorf("architect LLM call failed: %w", err)
 	}
 
-	cleaned := strings.TrimSpace(response)
-	cleaned = strings.TrimPrefix(cleaned, "```json")
-	cleaned = strings.TrimPrefix(cleaned, "```")
-	cleaned = strings.TrimSuffix(cleaned, "```")
-	cleaned = strings.TrimSpace(cleaned)
+	cleaned := cleanJSONResponse(response)
 
 	var result ArchitectReviewResult
 	if err := json.Unmarshal([]byte(cleaned), &result); err != nil {
@@ -93,11 +83,7 @@ func buildArchitectPrompt(input ArchitectInput) string {
 
 	// Patch plan summary, design choices, and assumptions.
 	fmt.Fprintf(&b, "## Patch Plan\n")
-	summary := input.Plan.PlanSummary
-	if summary == "" {
-		summary = input.Plan.Summary
-	}
-	fmt.Fprintf(&b, "Summary: %s\n\n", summary)
+	fmt.Fprintf(&b, "Summary: %s\n\n", input.Plan.PlanSummary)
 
 	if len(input.Plan.DesignChoices) > 0 {
 		fmt.Fprintf(&b, "### Design Choices\n")

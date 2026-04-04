@@ -53,7 +53,7 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 	triageDecision := agents.Triage(task, models.Dossier{TaskID: task.ID}, policy)
 	agentsInvoked = append(agentsInvoked, "triage")
 
-	if triageDecision.Decision == "reject" {
+	if triageDecision.Decision == agents.DecisionReject {
 		run := models.Run{
 			ID:             runID,
 			TaskID:         task.ID,
@@ -82,10 +82,7 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 
 	// --- 3. Archivist: enhance dossier via LLM ---
 	var llmCalls []models.LLMCall
-	archModel := "gemini-2.5-flash"
-	if rc, ok := mcfg.Roles["archivist"]; ok {
-		archModel = rc.Model
-	}
+	archModel := mcfg.ModelForRole("archivist", "gemini-2.5-flash")
 	llmClient := llm.NewClient(mcfg.Provider.BaseURL, mcfg.APIKey, archModel)
 	enhanced, llmCall, err := agents.EnhanceDossier(ctx, llmClient, archModel, task, dossier)
 	if err != nil {
@@ -107,7 +104,7 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 		HumanDecision:  models.HumanDecisionPending,
 	}
 
-	if triageDecision.Decision == "defer" {
+	if triageDecision.Decision == agents.DecisionDefer {
 		run.FinalStatus = models.RunStatusFailed
 		run.EndedAt = time.Now()
 		return &WorkflowResult{
@@ -131,10 +128,7 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 	defer runner.Cleanup()
 
 	// --- 6. Implementer Phase 1: read top files and create patch plan ---
-	implModel := archModel
-	if rc, ok := mcfg.Roles["implementer"]; ok {
-		implModel = rc.Model
-	}
+	implModel := mcfg.ModelForRole("implementer", archModel)
 	implClient := llm.NewClient(mcfg.Provider.BaseURL, mcfg.APIKey, implModel)
 
 	topN := len(dossier.RelatedFiles)
@@ -170,14 +164,18 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 
 	// --- 7. Implementer Phase 2: generate file contents ---
 	var failedFiles []string
-	totalFiles := len(plan.FilesToChange) + len(plan.FilesToCreate)
+	totalFiles := plan.TotalFiles()
 
 	for _, fc := range plan.FilesToChange {
-		currentContent := ""
 		fullPath := filepath.Join(runner.WorkDir, fc.Path)
-		data, readErr := os.ReadFile(fullPath)
-		if readErr == nil {
-			currentContent = string(data)
+		currentContent := ""
+		if cached, ok := fileContents[fc.Path]; ok {
+			currentContent = cached
+		} else {
+			data, readErr := os.ReadFile(fullPath)
+			if readErr == nil {
+				currentContent = string(data)
+			}
 		}
 
 		newContent, genCall, err := agents.GenerateFileContent(ctx, implClient, implModel, plan, task, fc.Path, currentContent)
@@ -257,13 +255,10 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 	agentsInvoked = append(agentsInvoked, "verifier")
 
 	// --- 10. Architect ---
-	archReviewModel := archModel
-	if rc, ok := mcfg.Roles["architect"]; ok {
-		archReviewModel = rc.Model
-	}
+	archReviewModel := mcfg.ModelForRole("architect", archModel)
 	archReviewClient := llm.NewClient(mcfg.Provider.BaseURL, mcfg.APIKey, archReviewModel)
 
-	supplementalDocs := findSupplementalDocs(runner.WorkDir, dossier, plan)
+	supplementalDocs := findSupplementalDocs(runner.WorkDir, dossier)
 
 	architectInput := agents.ArchitectInput{
 		Diff:             diff,
@@ -283,7 +278,7 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 
 	// --- 11. GitHub PR ---
 	prURL := ""
-	if ghAdapter != nil && policy.AllowPush && (architectReview.Recommendation == "approve") {
+	if ghAdapter != nil && policy.AllowPush && (architectReview.Recommendation == agents.RecommendApprove) {
 		branchName := buildBranchName(task)
 
 		commitMsg := fmt.Sprintf("agent: %s\n\n%s", task.Title, plan.PlanSummary)
@@ -345,7 +340,7 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 	run.LLMCalls = llmCalls
 	run.EndedAt = time.Now()
 
-	if architectReview.Recommendation == "reject" || architectReview.Recommendation == "revise" {
+	if architectReview.Recommendation == agents.RecommendReject || architectReview.Recommendation == agents.RecommendRevise {
 		run.FinalStatus = models.RunStatusFailed
 	} else if pass {
 		run.FinalStatus = models.RunStatusSuccess
@@ -369,7 +364,7 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 
 // findSupplementalDocs looks for ADR/design docs in the repo that relate to
 // the packages of changed files and returns their content.
-func findSupplementalDocs(workDir string, dossier models.Dossier, plan agents.PatchPlan) map[string]string {
+func findSupplementalDocs(workDir string, dossier models.Dossier) map[string]string {
 	docs := make(map[string]string)
 
 	// Collect doc paths from the dossier.
@@ -404,11 +399,12 @@ func buildBranchName(task models.Task) string {
 	return fmt.Sprintf("agent/task-%s-%s", suffix, slug)
 }
 
+var slugifyRe = regexp.MustCompile(`[^a-z0-9]+`)
+
 // slugify converts a title into a URL-safe slug.
 func slugify(s string) string {
 	s = strings.ToLower(s)
-	re := regexp.MustCompile(`[^a-z0-9]+`)
-	s = re.ReplaceAllString(s, "-")
+	s = slugifyRe.ReplaceAllString(s, "-")
 	s = strings.Trim(s, "-")
 	if len(s) > 50 {
 		s = s[:50]

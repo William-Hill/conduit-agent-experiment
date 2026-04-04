@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/github"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/llm"
@@ -87,27 +86,12 @@ func FilterIssues(issues []github.Issue) []github.Issue {
 func RankIssues(ctx context.Context, client *llm.Client, modelName string, issues []github.Issue) ([]RankedIssue, models.LLMCall, error) {
 	userPrompt := buildSelectorPrompt(issues)
 
-	start := time.Now()
-	response, err := client.Complete(ctx, selectorSystemPrompt, userPrompt)
-	duration := time.Since(start)
-
-	call := models.LLMCall{
-		Agent:    "selector",
-		Model:    modelName,
-		Prompt:   userPrompt,
-		Response: response,
-		Duration: duration.String(),
-	}
-
+	response, call, err := callLLM(ctx, client, "selector", modelName, selectorSystemPrompt, userPrompt)
 	if err != nil {
 		return nil, call, fmt.Errorf("selector LLM call failed: %w", err)
 	}
 
-	cleaned := strings.TrimSpace(response)
-	cleaned = strings.TrimPrefix(cleaned, "```json")
-	cleaned = strings.TrimPrefix(cleaned, "```")
-	cleaned = strings.TrimSuffix(cleaned, "```")
-	cleaned = strings.TrimSpace(cleaned)
+	cleaned := cleanJSONResponse(response)
 
 	var ranked []RankedIssue
 	if err := json.Unmarshal([]byte(cleaned), &ranked); err != nil {

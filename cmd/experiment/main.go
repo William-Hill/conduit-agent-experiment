@@ -97,15 +97,7 @@ func newRunCmd() *cobra.Command {
 				return fmt.Errorf("loading task: %w", err)
 			}
 
-			var ghAdapter *ghub.Adapter
-			if cfg.GitHub.Owner != "" && cfg.GitHub.Repo != "" {
-				ghAdapter = &ghub.Adapter{
-					Owner:      cfg.GitHub.Owner,
-					Repo:       cfg.GitHub.Repo,
-					BaseBranch: cfg.GitHub.BaseBranch,
-					ForkOwner:  cfg.GitHub.ForkOwner,
-				}
-			}
+			ghAdapter := newGitHubAdapter(cfg.GitHub)
 
 			fmt.Printf("Running task %s: %s\n", task.ID, task.Title)
 			result, err := orchestrator.RunWorkflow(cmd.Context(), task, cfg, mcfg, ghAdapter)
@@ -115,7 +107,7 @@ func newRunCmd() *cobra.Command {
 
 			fmt.Printf("Triage: %s (%s)\n", result.TriageDecision.Decision, result.TriageDecision.Reason)
 
-			if result.TriageDecision.Decision != "accept" {
+			if result.TriageDecision.Decision != agents.DecisionAccept {
 				fmt.Printf("Task %s, skipping verification\n", result.TriageDecision.Decision)
 			} else {
 				fmt.Printf("Verification: %s\n", result.VerifierReport.Summary)
@@ -211,11 +203,9 @@ func newSelectCmd() *cobra.Command {
 				return fmt.Errorf("GEMINI_API_KEY env var is required")
 			}
 
-			ghAdapter := &ghub.Adapter{
-				Owner:      cfg.GitHub.Owner,
-				Repo:       cfg.GitHub.Repo,
-				BaseBranch: cfg.GitHub.BaseBranch,
-				ForkOwner:  cfg.GitHub.ForkOwner,
+			ghAdapter := newGitHubAdapter(cfg.GitHub)
+			if ghAdapter == nil {
+				return fmt.Errorf("github.owner and github.repo are required for issue selection")
 			}
 
 			opts := ghub.IssueListOpts{
@@ -232,10 +222,7 @@ func newSelectCmd() *cobra.Command {
 
 			filtered := agents.FilterIssues(issues)
 
-			selectorModel := "gemini-2.5-flash"
-			if rc, ok := mcfg.Roles["selector"]; ok {
-				selectorModel = rc.Model
-			}
+			selectorModel := mcfg.ModelForRole("selector", "gemini-2.5-flash")
 			llmClient := llm.NewClient(mcfg.Provider.BaseURL, mcfg.APIKey, selectorModel)
 
 			ranked, _, err := agents.RankIssues(cmd.Context(), llmClient, selectorModel, filtered)
@@ -315,6 +302,18 @@ func newScorecardCmd() *cobra.Command {
 			fmt.Print(evaluation.FormatScorecard(sc))
 			return nil
 		},
+	}
+}
+
+func newGitHubAdapter(cfg config.GitHubConfig) *ghub.Adapter {
+	if cfg.Owner == "" || cfg.Repo == "" {
+		return nil
+	}
+	return &ghub.Adapter{
+		Owner:      cfg.Owner,
+		Repo:       cfg.Repo,
+		BaseBranch: cfg.BaseBranch,
+		ForkOwner:  cfg.ForkOwner,
 	}
 }
 

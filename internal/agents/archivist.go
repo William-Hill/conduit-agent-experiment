@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/llm"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/models"
@@ -38,29 +37,14 @@ type archivistResponse struct {
 func EnhanceDossier(ctx context.Context, client *llm.Client, modelName string, task models.Task, original models.Dossier) (models.Dossier, models.LLMCall, error) {
 	userPrompt := buildArchivistPrompt(task, original)
 
-	start := time.Now()
-	response, err := client.Complete(ctx, archivistSystemPrompt, userPrompt)
-	duration := time.Since(start)
-
-	call := models.LLMCall{
-		Agent:    "archivist",
-		Model:    modelName,
-		Prompt:   userPrompt,
-		Response: response,
-		Duration: duration.String(),
-	}
-
+	response, call, err := callLLM(ctx, client, "archivist", modelName, archivistSystemPrompt, userPrompt)
 	if err != nil {
 		log.Printf("archivist LLM call failed, using keyword dossier: %v", err)
 		return original, call, nil
 	}
 
 	var parsed archivistResponse
-	cleaned := strings.TrimSpace(response)
-	cleaned = strings.TrimPrefix(cleaned, "```json")
-	cleaned = strings.TrimPrefix(cleaned, "```")
-	cleaned = strings.TrimSuffix(cleaned, "```")
-	cleaned = strings.TrimSpace(cleaned)
+	cleaned := cleanJSONResponse(response)
 
 	if err := json.Unmarshal([]byte(cleaned), &parsed); err != nil {
 		log.Printf("archivist response not valid JSON, using keyword dossier: %v", err)

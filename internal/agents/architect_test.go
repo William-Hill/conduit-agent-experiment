@@ -32,7 +32,7 @@ func TestArchitectReviewApprove(t *testing.T) {
 			Risks:   []string{"low blast radius"},
 		},
 		Plan: PatchPlan{
-			Summary:       "Update pipeline config parsing",
+			PlanSummary:   "Update pipeline config parsing",
 			DesignChoices: []string{"Use existing parser interface"},
 			Assumptions:   []string{"No breaking changes to public API"},
 		},
@@ -84,7 +84,7 @@ func TestArchitectReviewReject(t *testing.T) {
 			Summary: "Add direct DB query from handler",
 		},
 		Plan: PatchPlan{
-			Summary: "Add DB query in HTTP handler",
+			PlanSummary: "Add DB query in HTTP handler",
 		},
 		VerifierReport: VerifierReport{
 			OverallPass: false,
@@ -111,7 +111,7 @@ func TestArchitectReviewBadJSON(t *testing.T) {
 	input := ArchitectInput{
 		Diff:    "--- a/foo.go\n+++ b/foo.go",
 		Dossier: models.Dossier{TaskID: "task-003"},
-		Plan:    PatchPlan{Summary: "some plan"},
+		Plan:    PatchPlan{PlanSummary: "some plan"},
 		VerifierReport: VerifierReport{
 			OverallPass: true,
 			Summary:     "all good",

@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/llm"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/models"
@@ -47,10 +46,6 @@ type PatchPlan struct {
 	DesignChoices       []string     `json:"design_choices"`
 	Assumptions         []string     `json:"assumptions"`
 	TestRecommendations []string     `json:"test_recommendations"`
-
-	// Summary and DesignChoices/Assumptions are also exposed as convenient
-	// aliases used by the Architect agent prompt builder.
-	Summary string `json:"-"`
 }
 
 // TotalFiles returns the total number of files affected by the plan.
@@ -62,35 +57,17 @@ func (p PatchPlan) TotalFiles() int {
 func CreatePatchPlan(ctx context.Context, client *llm.Client, modelName string, task models.Task, dossier models.Dossier, fileContents map[string]string) (PatchPlan, models.LLMCall, error) {
 	userPrompt := buildImplementerPrompt(task, dossier, fileContents)
 
-	start := time.Now()
-	response, err := client.Complete(ctx, implementerSystemPrompt, userPrompt)
-	duration := time.Since(start)
-
-	call := models.LLMCall{
-		Agent:    "implementer",
-		Model:    modelName,
-		Prompt:   userPrompt,
-		Response: response,
-		Duration: duration.String(),
-	}
-
+	response, call, err := callLLM(ctx, client, "implementer", modelName, implementerSystemPrompt, userPrompt)
 	if err != nil {
 		return PatchPlan{}, call, fmt.Errorf("implementer LLM call failed: %w", err)
 	}
 
-	cleaned := strings.TrimSpace(response)
-	cleaned = strings.TrimPrefix(cleaned, "```json")
-	cleaned = strings.TrimPrefix(cleaned, "```")
-	cleaned = strings.TrimSuffix(cleaned, "```")
-	cleaned = strings.TrimSpace(cleaned)
+	cleaned := cleanJSONResponse(response)
 
 	var plan PatchPlan
 	if err := json.Unmarshal([]byte(cleaned), &plan); err != nil {
 		return PatchPlan{}, call, fmt.Errorf("implementer response not valid JSON: %w", err)
 	}
-
-	// Populate the convenience Summary alias.
-	plan.Summary = plan.PlanSummary
 
 	return plan, call, nil
 }
@@ -101,18 +78,7 @@ func GenerateFileContent(ctx context.Context, client *llm.Client, modelName stri
 
 	userPrompt := buildFileContentPrompt(plan, task, filePath, currentContent)
 
-	start := time.Now()
-	response, err := client.Complete(ctx, systemPrompt, userPrompt)
-	duration := time.Since(start)
-
-	call := models.LLMCall{
-		Agent:    "implementer",
-		Model:    modelName,
-		Prompt:   userPrompt,
-		Response: response,
-		Duration: duration.String(),
-	}
-
+	response, call, err := callLLM(ctx, client, "implementer", modelName, systemPrompt, userPrompt)
 	if err != nil {
 		return "", call, fmt.Errorf("implementer file generation LLM call failed: %w", err)
 	}
@@ -141,16 +107,12 @@ func ReadFileContents(baseDir string, paths []string, maxSize int64) map[string]
 	result := make(map[string]string)
 	for _, p := range paths {
 		full := filepath.Join(baseDir, p)
-		info, err := os.Stat(full)
-		if err != nil {
-			continue
-		}
 		data, err := os.ReadFile(full)
 		if err != nil {
 			continue
 		}
 		content := string(data)
-		if info.Size() > maxSize {
+		if int64(len(data)) > maxSize {
 			content = content[:maxSize] + "\n[... truncated: file exceeds size limit ...]"
 		}
 		result[p] = content

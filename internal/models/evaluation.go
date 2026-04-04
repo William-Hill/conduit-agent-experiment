@@ -37,10 +37,10 @@ type Evaluation struct {
 	TotalDurationMs     int64       `json:"total_duration_ms"`
 	LLMCalls            int         `json:"llm_calls"`
 	LLMTokensUsed       int         `json:"llm_tokens_used,omitempty"`
-	LintPass            bool        `json:"lint_pass"`
-	BuildPass           bool        `json:"build_pass"`
-	TestsPass           bool        `json:"tests_pass"`
-	ReviewScore         int         `json:"review_score"`
-	ArchitectureScore   int         `json:"architecture_score"`
+	LintPass            bool        `json:"lint_pass,omitempty"`
+	BuildPass           bool        `json:"build_pass,omitempty"`
+	TestsPass           bool        `json:"tests_pass,omitempty"`
+	ReviewScore         int         `json:"review_score,omitempty"`
+	ArchitectureScore   int         `json:"architecture_score,omitempty"`
 	Notes               string      `json:"notes,omitempty"`
 }
