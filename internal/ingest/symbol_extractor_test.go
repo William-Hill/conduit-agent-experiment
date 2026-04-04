@@ -3,6 +3,7 @@ package ingest
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -334,6 +335,41 @@ func TestBuildSymbolIndex_WithTests(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected TestEngine symbol when WithTests() is used")
+	}
+}
+
+func TestFormatSymbolContext(t *testing.T) {
+	symbols := []Symbol{
+		{Name: "Engine", Kind: "type", Package: "core", Signature: "type Engine struct{}", Doc: "Engine is the core engine."},
+		{Name: "Start", Kind: "method", Package: "core", Signature: "func (Engine) Start(ctx context.Context) error", Doc: "Start begins engine execution."},
+		{Name: "Run", Kind: "func", Package: "main", Signature: "func Run()", Doc: "Run starts the app."},
+	}
+
+	output := FormatSymbolContext(symbols)
+
+	if output == "" {
+		t.Fatal("FormatSymbolContext returned empty string")
+	}
+
+	// Verify grouping by package: "core" and "main" sections should appear.
+	if !strings.Contains(output, "core") {
+		t.Error("output should contain package 'core'")
+	}
+	if !strings.Contains(output, "main") {
+		t.Error("output should contain package 'main'")
+	}
+
+	// Verify signatures appear.
+	if !strings.Contains(output, "type Engine struct{}") {
+		t.Error("output should contain Engine signature")
+	}
+	if !strings.Contains(output, "func Run()") {
+		t.Error("output should contain Run signature")
+	}
+
+	// Verify docs appear.
+	if !strings.Contains(output, "Engine is the core engine.") {
+		t.Error("output should contain Engine doc")
 	}
 }
 

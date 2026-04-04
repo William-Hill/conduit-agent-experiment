@@ -300,3 +300,34 @@ func SearchSymbols(index *SymbolIndex, query string) []Symbol {
 	}
 	return results
 }
+
+// FormatSymbolContext formats symbols as readable text for LLM prompts,
+// grouped by package.
+func FormatSymbolContext(symbols []Symbol) string {
+	byPkg := make(map[string][]Symbol)
+	var pkgOrder []string
+	seen := make(map[string]bool)
+	for _, s := range symbols {
+		if !seen[s.Package] {
+			seen[s.Package] = true
+			pkgOrder = append(pkgOrder, s.Package)
+		}
+		byPkg[s.Package] = append(byPkg[s.Package], s)
+	}
+
+	var b strings.Builder
+	for i, pkg := range pkgOrder {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		fmt.Fprintf(&b, "## package %s\n\n", pkg)
+		for _, s := range byPkg[pkg] {
+			b.WriteString(s.Signature)
+			b.WriteString("\n")
+			if s.Doc != "" {
+				fmt.Fprintf(&b, "  // %s\n", s.Doc)
+			}
+		}
+	}
+	return b.String()
+}
