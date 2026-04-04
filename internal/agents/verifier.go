@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/execution"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/models"
@@ -53,6 +54,7 @@ func Verify(ctx context.Context, runner *execution.CommandRunner, dossier models
 				Command:  cmd,
 				ExitCode: -1,
 				Stderr:   "blocked by verifier policy: command not allowlisted",
+				RunAt:    time.Now(),
 			})
 			failed = append(failed, cmd)
 			continue

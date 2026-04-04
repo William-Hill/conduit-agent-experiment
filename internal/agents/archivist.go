@@ -83,8 +83,17 @@ func EnhanceDossier(ctx context.Context, client *llm.Client, modelName string, t
 	if len(enhanced.RelatedFiles) == 0 {
 		enhanced.RelatedFiles = original.RelatedFiles
 	}
+	if len(enhanced.RelatedDocs) == 0 {
+		enhanced.RelatedDocs = original.RelatedDocs
+	}
 	if len(enhanced.LikelyCommands) == 0 {
 		enhanced.LikelyCommands = original.LikelyCommands
+	}
+	if len(enhanced.Risks) == 0 {
+		enhanced.Risks = original.Risks
+	}
+	if len(enhanced.OpenQuestions) == 0 {
+		enhanced.OpenQuestions = original.OpenQuestions
 	}
 
 	return enhanced, call, nil
