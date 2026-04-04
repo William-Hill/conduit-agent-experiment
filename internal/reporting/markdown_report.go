@@ -77,6 +77,32 @@ const reportTemplate = `# Run Report: {{ .Run.ID }}
 {{- end }}
 {{- end }}
 
+{{ if .Run.ImplementerPlan }}
+## Patch Plan
+
+{{ .Run.ImplementerPlan }}
+{{ end }}
+{{ if .Run.ImplementerDiff }}
+## Diff
+
+` + "```" + `
+{{ .Run.ImplementerDiff }}
+` + "```" + `
+{{ end }}
+{{ if .Run.ArchitectDecision }}
+## Architect Review
+
+| Field | Value |
+|-------|-------|
+| Decision | {{ .Run.ArchitectDecision }} |
+
+{{ .Run.ArchitectReview }}
+{{ end }}
+{{ if .Run.PRURL }}
+## Pull Request
+
+{{ .Run.PRURL }}
+{{ end }}
 ## Run Details
 
 | Field | Value |
