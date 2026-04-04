@@ -3,11 +3,18 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"log"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/agents"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/config"
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/evaluation"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/execution"
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/github"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/ingest"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/llm"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/models"
@@ -16,22 +23,33 @@ import (
 
 // WorkflowResult holds all artifacts produced by a single task run.
 type WorkflowResult struct {
-	Run            models.Run
-	Dossier        models.Dossier
-	Task           models.Task
-	TriageDecision agents.TriageDecision
-	VerifierReport agents.VerifierReport
-	LLMCalls       []models.LLMCall
+	Run             models.Run
+	Dossier         models.Dossier
+	Task            models.Task
+	TriageDecision  agents.TriageDecision
+	PatchPlan       agents.PatchPlan
+	VerifierReport  agents.VerifierReport
+	ArchitectReview agents.ArchitectReviewResult
+	Evaluation      models.Evaluation
+	LLMCalls        []models.LLMCall
+	PRURL           string
 }
 
 // RunWorkflow executes the full agent pipeline for a task.
-func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg config.ModelsConfig) (*WorkflowResult, error) {
+func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg config.ModelsConfig, ghAdapter *github.Adapter) (*WorkflowResult, error) {
 	startTime := time.Now()
 	runID := fmt.Sprintf("run-%s-%s", task.ID, startTime.Format("20060102-150405"))
 	agentsInvoked := []string{}
 
-	// Triage first — reject out-of-policy tasks before any LLM calls or repo ingestion.
+	// --- 1. Triage: reject out-of-policy tasks before any LLM calls or repo ingestion ---
 	policy := DefaultPhase1Policy()
+	if cfg.Policy.MaxFilesChanged > 0 {
+		policy.MaxFilesChanged = cfg.Policy.MaxFilesChanged
+	}
+	if cfg.Policy.AllowPush {
+		policy.AllowPush = cfg.Policy.AllowPush
+	}
+
 	triageDecision := agents.Triage(task, models.Dossier{TaskID: task.ID}, policy)
 	agentsInvoked = append(agentsInvoked, "triage")
 
@@ -55,12 +73,14 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 		}, nil
 	}
 
+	// --- 2. Repo walk + keyword dossier ---
 	inv, err := ingest.WalkRepo(cfg.Target.RepoPath)
 	if err != nil {
 		return nil, fmt.Errorf("walking repo: %w", err)
 	}
 	dossier := retrieval.BuildDossier(task, inv)
 
+	// --- 3. Archivist: enhance dossier via LLM ---
 	var llmCalls []models.LLMCall
 	archModel := "gemini-2.5-flash"
 	if rc, ok := mcfg.Roles["archivist"]; ok {
@@ -75,6 +95,7 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 	llmCalls = append(llmCalls, llmCall)
 	agentsInvoked = append(agentsInvoked, "archivist")
 
+	// --- 4. Triage re-check after archivist ---
 	run := models.Run{
 		ID:             runID,
 		TaskID:         task.ID,
@@ -98,6 +119,7 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 		}, nil
 	}
 
+	// --- 5. Setup worktree ---
 	runner := &execution.CommandRunner{
 		RepoPath:       cfg.Target.RepoPath,
 		UseWorktree:    cfg.Execution.UseWorktree,
@@ -108,28 +130,351 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 	}
 	defer runner.Cleanup()
 
+	// --- 6. Implementer Phase 1: read top files and create patch plan ---
+	implModel := archModel
+	if rc, ok := mcfg.Roles["implementer"]; ok {
+		implModel = rc.Model
+	}
+	implClient := llm.NewClient(mcfg.Provider.BaseURL, mcfg.APIKey, implModel)
+
+	topN := len(dossier.RelatedFiles)
+	if topN > 10 {
+		topN = 10
+	}
+	topFiles := dossier.RelatedFiles[:topN]
+	fileContents := agents.ReadFileContents(runner.WorkDir, topFiles, 32*1024)
+
+	plan, planCall, err := agents.CreatePatchPlan(ctx, implClient, implModel, task, dossier, fileContents)
+	if err != nil {
+		return nil, fmt.Errorf("implementer plan: %w", err)
+	}
+	llmCalls = append(llmCalls, planCall)
+	agentsInvoked = append(agentsInvoked, "implementer")
+
+	if err := policy.CheckPatchBreadth(plan.TotalFiles()); err != nil {
+		run.AgentsInvoked = agentsInvoked
+		run.FinalStatus = models.RunStatusRejected
+		run.TriageReason = err.Error()
+		run.EndedAt = time.Now()
+		run.LLMCalls = llmCalls
+		run.ImplementerPlan = plan.PlanSummary
+		return &WorkflowResult{
+			Run:            run,
+			Dossier:        dossier,
+			Task:           task,
+			TriageDecision: triageDecision,
+			PatchPlan:      plan,
+			LLMCalls:       llmCalls,
+		}, nil
+	}
+
+	// --- 7. Implementer Phase 2: generate file contents ---
+	var failedFiles []string
+	totalFiles := len(plan.FilesToChange) + len(plan.FilesToCreate)
+
+	for _, fc := range plan.FilesToChange {
+		currentContent := ""
+		fullPath := filepath.Join(runner.WorkDir, fc.Path)
+		data, readErr := os.ReadFile(fullPath)
+		if readErr == nil {
+			currentContent = string(data)
+		}
+
+		newContent, genCall, err := agents.GenerateFileContent(ctx, implClient, implModel, plan, task, fc.Path, currentContent)
+		if err != nil {
+			log.Printf("implementer: generation failed for %s: %v — marking as failed, continuing", fc.Path, err)
+			failedFiles = append(failedFiles, fc.Path)
+			continue
+		}
+		llmCalls = append(llmCalls, genCall)
+
+		// Ensure parent directory exists and write file.
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			return nil, fmt.Errorf("creating dir for %s: %w", fc.Path, err)
+		}
+		if err := os.WriteFile(fullPath, []byte(newContent), 0644); err != nil {
+			return nil, fmt.Errorf("writing %s: %w", fc.Path, err)
+		}
+	}
+
+	for _, fc := range plan.FilesToCreate {
+		fullPath := filepath.Join(runner.WorkDir, fc.Path)
+		newContent, genCall, err := agents.GenerateFileContent(ctx, implClient, implModel, plan, task, fc.Path, "")
+		if err != nil {
+			log.Printf("implementer: generation failed for %s: %v — marking as failed, continuing", fc.Path, err)
+			failedFiles = append(failedFiles, fc.Path)
+			continue
+		}
+		llmCalls = append(llmCalls, genCall)
+
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			return nil, fmt.Errorf("creating dir for %s: %w", fc.Path, err)
+		}
+		if err := os.WriteFile(fullPath, []byte(newContent), 0644); err != nil {
+			return nil, fmt.Errorf("writing %s: %w", fc.Path, err)
+		}
+	}
+
+	// If all files failed, mark the run as failed with implementation_hallucination.
+	if totalFiles > 0 && len(failedFiles) == totalFiles {
+		run.AgentsInvoked = agentsInvoked
+		run.FinalStatus = models.RunStatusFailed
+		run.ImplementerPlan = plan.PlanSummary
+		run.LLMCalls = llmCalls
+		run.EndedAt = time.Now()
+
+		eval := evaluation.BuildEvaluation(evaluation.EvalInput{
+			RunID:          runID,
+			TaskID:         task.ID,
+			IssueNumber:    task.IssueNumber,
+			Difficulty:     string(task.Difficulty),
+			BlastRadius:    string(task.BlastRadius),
+			TriageDecision: triageDecision.Decision,
+			FilesChanged:   plan.TotalFiles(),
+			FailureMode:    models.FailureHallucination,
+			FailureDetail:  fmt.Sprintf("all %d file(s) failed generation: %s", totalFiles, strings.Join(failedFiles, ", ")),
+			TotalDurationMs: time.Since(startTime).Milliseconds(),
+			LLMCalls:        len(llmCalls),
+		})
+
+		return &WorkflowResult{
+			Run:            run,
+			Dossier:        dossier,
+			Task:           task,
+			TriageDecision: triageDecision,
+			PatchPlan:      plan,
+			Evaluation:     eval,
+			LLMCalls:       llmCalls,
+		}, nil
+	}
+
+	// --- 8. Git diff ---
+	diffLog := runner.Run(ctx, "git diff")
+	diff := diffLog.Stdout
+
+	// --- 9. Verifier ---
 	verifierReport := agents.Verify(ctx, runner, dossier)
 	agentsInvoked = append(agentsInvoked, "verifier")
 
+	// --- 10. Architect ---
+	archReviewModel := archModel
+	if rc, ok := mcfg.Roles["architect"]; ok {
+		archReviewModel = rc.Model
+	}
+	archReviewClient := llm.NewClient(mcfg.Provider.BaseURL, mcfg.APIKey, archReviewModel)
+
+	supplementalDocs := findSupplementalDocs(runner.WorkDir, dossier, plan)
+
+	architectInput := agents.ArchitectInput{
+		Diff:             diff,
+		Dossier:          dossier,
+		Plan:             plan,
+		VerifierReport:   verifierReport,
+		SupplementalDocs: supplementalDocs,
+		FailedFiles:      failedFiles,
+	}
+
+	architectReview, archCall, err := agents.ArchitectReview(ctx, archReviewClient, archReviewModel, architectInput)
+	if err != nil {
+		return nil, fmt.Errorf("architect review: %w", err)
+	}
+	llmCalls = append(llmCalls, archCall)
+	agentsInvoked = append(agentsInvoked, "architect")
+
+	// --- 11. GitHub PR ---
+	prURL := ""
+	if ghAdapter != nil && policy.AllowPush && (architectReview.Recommendation == "approve") {
+		branchName := buildBranchName(task)
+
+		commitMsg := fmt.Sprintf("agent: %s\n\n%s", task.Title, plan.PlanSummary)
+		if err := ghAdapter.CreateBranchAndPush(ctx, runner.WorkDir, branchName, commitMsg); err != nil {
+			return nil, fmt.Errorf("creating branch and pushing: %w", err)
+		}
+
+		prBody := buildPRBody(dossier, plan, verifierReport, architectReview)
+		baseBranch := ghAdapter.BaseBranch
+		if baseBranch == "" {
+			baseBranch = "main"
+		}
+
+		url, err := ghAdapter.CreateDraftPR(ctx, github.DraftPRInput{
+			Title: task.Title,
+			Body:  prBody,
+			Head:  branchName,
+			Base:  baseBranch,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("creating draft PR: %w", err)
+		}
+		prURL = url
+	}
+
+	// --- 12. Build evaluation ---
 	pass := verifierReport.OverallPass
+	diffLines := countDiffLines(diff)
+
+	eval := evaluation.BuildEvaluation(evaluation.EvalInput{
+		RunID:               runID,
+		TaskID:              task.ID,
+		IssueNumber:         task.IssueNumber,
+		Difficulty:          string(task.Difficulty),
+		BlastRadius:         string(task.BlastRadius),
+		TriageDecision:      triageDecision.Decision,
+		ImplementerSuccess:  diff != "",
+		FilesChanged:        plan.TotalFiles(),
+		DiffLines:           diffLines,
+		VerifierPass:        pass,
+		ArchitectDecision:   architectReview.Recommendation,
+		ArchitectConfidence: architectReview.Confidence,
+		PRCreated:           prURL != "",
+		PRURL:               prURL,
+		TotalDurationMs:     time.Since(startTime).Milliseconds(),
+		LLMCalls:            len(llmCalls),
+	})
+
+	// --- 13. Finalize run ---
 	run.AgentsInvoked = agentsInvoked
 	run.CommandsRun = verifierReport.Commands
 	run.VerifierPass = &pass
 	run.VerifierSummary = verifierReport.Summary
+	run.ImplementerPlan = plan.PlanSummary
+	run.ImplementerDiff = diff
+	run.ArchitectDecision = architectReview.Recommendation
+	run.ArchitectReview = architectReview.Rationale
+	run.PRURL = prURL
+	run.LLMCalls = llmCalls
 	run.EndedAt = time.Now()
 
-	if verifierReport.OverallPass {
+	if architectReview.Recommendation == "reject" || architectReview.Recommendation == "revise" {
+		run.FinalStatus = models.RunStatusFailed
+	} else if pass {
 		run.FinalStatus = models.RunStatusSuccess
 	} else {
 		run.FinalStatus = models.RunStatusFailed
 	}
 
 	return &WorkflowResult{
-		Run:            run,
-		Dossier:        dossier,
-		Task:           task,
-		TriageDecision: triageDecision,
-		VerifierReport: verifierReport,
-		LLMCalls:       llmCalls,
+		Run:             run,
+		Dossier:         dossier,
+		Task:            task,
+		TriageDecision:  triageDecision,
+		PatchPlan:       plan,
+		VerifierReport:  verifierReport,
+		ArchitectReview: architectReview,
+		Evaluation:      eval,
+		LLMCalls:        llmCalls,
+		PRURL:           prURL,
 	}, nil
+}
+
+// findSupplementalDocs looks for ADR/design docs in the repo that relate to
+// the packages of changed files and returns their content.
+func findSupplementalDocs(workDir string, dossier models.Dossier, plan agents.PatchPlan) map[string]string {
+	docs := make(map[string]string)
+
+	// Collect doc paths from the dossier.
+	for _, docPath := range dossier.RelatedDocs {
+		if isADROrDesignDoc(docPath) {
+			fullPath := filepath.Join(workDir, docPath)
+			data, err := os.ReadFile(fullPath)
+			if err == nil {
+				docs[docPath] = string(data)
+			}
+		}
+	}
+
+	return docs
+}
+
+// isADROrDesignDoc returns true if the path matches ADR or design doc patterns.
+func isADROrDesignDoc(path string) bool {
+	return strings.Contains(path, "docs/adr/") ||
+		strings.Contains(path, "docs/adr\\") ||
+		strings.Contains(path, "docs/design-doc") ||
+		strings.Contains(path, "docs/design-documents/")
+}
+
+// buildBranchName creates a branch name for the agent's PR.
+func buildBranchName(task models.Task) string {
+	suffix := task.ID
+	if task.IssueNumber > 0 {
+		suffix = fmt.Sprintf("%d", task.IssueNumber)
+	}
+	slug := slugify(task.Title)
+	return fmt.Sprintf("agent/task-%s-%s", suffix, slug)
+}
+
+// slugify converts a title into a URL-safe slug.
+func slugify(s string) string {
+	s = strings.ToLower(s)
+	re := regexp.MustCompile(`[^a-z0-9]+`)
+	s = re.ReplaceAllString(s, "-")
+	s = strings.Trim(s, "-")
+	if len(s) > 50 {
+		s = s[:50]
+	}
+	return s
+}
+
+// buildPRBody creates the markdown body for a draft PR.
+func buildPRBody(dossier models.Dossier, plan agents.PatchPlan, verifier agents.VerifierReport, architect agents.ArchitectReviewResult) string {
+	var b strings.Builder
+
+	b.WriteString("## Dossier Summary\n\n")
+	b.WriteString(dossier.Summary)
+	b.WriteString("\n\n")
+
+	b.WriteString("## Patch Plan\n\n")
+	b.WriteString(plan.PlanSummary)
+	b.WriteString("\n\n")
+
+	if len(plan.FilesToChange) > 0 {
+		b.WriteString("### Files Changed\n")
+		for _, f := range plan.FilesToChange {
+			fmt.Fprintf(&b, "- `%s` (%s): %s\n", f.Path, f.Action, f.Description)
+		}
+		b.WriteString("\n")
+	}
+
+	if len(plan.FilesToCreate) > 0 {
+		b.WriteString("### Files Created\n")
+		for _, f := range plan.FilesToCreate {
+			fmt.Fprintf(&b, "- `%s`: %s\n", f.Path, f.Description)
+		}
+		b.WriteString("\n")
+	}
+
+	b.WriteString("## Verifier Results\n\n")
+	if verifier.OverallPass {
+		b.WriteString("**Status:** PASS\n\n")
+	} else {
+		b.WriteString("**Status:** FAIL\n\n")
+	}
+	b.WriteString(verifier.Summary)
+	b.WriteString("\n\n")
+
+	b.WriteString("## Architect Review\n\n")
+	fmt.Fprintf(&b, "**Recommendation:** %s (confidence: %s)\n\n", architect.Recommendation, architect.Confidence)
+	b.WriteString(architect.Rationale)
+	b.WriteString("\n\n")
+
+	if len(architect.Suggestions) > 0 {
+		b.WriteString("### Suggestions\n")
+		for _, s := range architect.Suggestions {
+			fmt.Fprintf(&b, "- %s\n", s)
+		}
+		b.WriteString("\n")
+	}
+
+	b.WriteString("---\n*Generated by conduit-agent-experiment*\n")
+
+	return b.String()
+}
+
+// countDiffLines counts the number of lines in a diff string.
+func countDiffLines(diff string) int {
+	if diff == "" {
+		return 0
+	}
+	return len(strings.Split(diff, "\n"))
 }

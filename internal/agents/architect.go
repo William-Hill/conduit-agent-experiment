@@ -39,6 +39,7 @@ type ArchitectInput struct {
 	Plan             PatchPlan
 	VerifierReport   VerifierReport
 	SupplementalDocs map[string]string // path -> content of ADRs/docs
+	FailedFiles      []string          // files where generation failed (partial implementation)
 }
 
 // ArchitectReviewResult is the structured output from the Architect agent.
@@ -136,6 +137,16 @@ func buildArchitectPrompt(input ArchitectInput) string {
 
 	// The diff.
 	fmt.Fprintf(&b, "## Diff\n```diff\n%s\n```\n\n", input.Diff)
+
+	// Failed files from partial implementation.
+	if len(input.FailedFiles) > 0 {
+		fmt.Fprintf(&b, "## Incomplete Files (generation failed)\n")
+		fmt.Fprintf(&b, "The following files were planned but could not be generated. The diff is partial.\n")
+		for _, f := range input.FailedFiles {
+			fmt.Fprintf(&b, "- %s\n", f)
+		}
+		fmt.Fprintf(&b, "\n")
+	}
 
 	// Supplemental docs (ADRs etc).
 	if len(input.SupplementalDocs) > 0 {
