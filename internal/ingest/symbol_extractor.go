@@ -221,57 +221,67 @@ func exprString(expr ast.Expr) string {
 	return "unknown"
 }
 
-// buildSymbolIndexFromDir walks dir and builds a SymbolIndex from all Go files.
-// opts configure indexing behavior (e.g. WithTests).
-// This is a placeholder that uses io/fs and filepath to silence import warnings.
-func buildSymbolIndexFromDir(dir string, opts ...IndexOption) (*SymbolIndex, error) {
+// BuildSymbolIndex walks a repository and extracts symbols from all Go files.
+// By default, _test.go files are excluded. Use WithTests() to include them.
+func BuildSymbolIndex(repoPath string, opts ...IndexOption) (*SymbolIndex, error) {
 	cfg := &indexConfig{}
-	for _, o := range opts {
-		o(cfg)
+	for _, opt := range opts {
+		opt(cfg)
 	}
 
-	idx := &SymbolIndex{
-		ByPackage: make(map[string][]Symbol),
-		ByKind:    make(map[string][]Symbol),
-		ByFile:    make(map[string][]Symbol),
-	}
+	var allSymbols []Symbol
 
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+	err := filepath.WalkDir(repoPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
+
 		if d.IsDir() {
-			return nil
-		}
-		if !strings.HasSuffix(path, ".go") {
-			return nil
-		}
-		if !cfg.includeTests && strings.HasSuffix(path, "_test.go") {
+			if skipDir(d.Name()) {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 
-		relPath, err := filepath.Rel(dir, path)
+		if filepath.Ext(path) != ".go" {
+			return nil
+		}
+
+		if !cfg.includeTests && strings.HasSuffix(d.Name(), "_test.go") {
+			return nil
+		}
+
+		relPath, err := filepath.Rel(repoPath, path)
 		if err != nil {
-			return err
+			return nil
 		}
 
-		syms, err := ExtractSymbols(path)
+		symbols, err := ExtractSymbols(path)
 		if err != nil {
-			return err
+			// Skip files that fail to parse.
+			return nil
 		}
 
-		for i := range syms {
-			syms[i].File = relPath
-			idx.Symbols = append(idx.Symbols, syms[i])
-			idx.ByPackage[syms[i].Package] = append(idx.ByPackage[syms[i].Package], syms[i])
-			idx.ByKind[syms[i].Kind] = append(idx.ByKind[syms[i].Kind], syms[i])
-			idx.ByFile[relPath] = append(idx.ByFile[relPath], syms[i])
+		for i := range symbols {
+			symbols[i].File = relPath
 		}
-
+		allSymbols = append(allSymbols, symbols...)
 		return nil
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	idx := &SymbolIndex{
+		Symbols:   allSymbols,
+		ByPackage: make(map[string][]Symbol),
+		ByKind:    make(map[string][]Symbol),
+		ByFile:    make(map[string][]Symbol),
+	}
+	for _, s := range allSymbols {
+		idx.ByPackage[s.Package] = append(idx.ByPackage[s.Package], s)
+		idx.ByKind[s.Kind] = append(idx.ByKind[s.Kind], s)
+		idx.ByFile[s.File] = append(idx.ByFile[s.File], s)
 	}
 
 	return idx, nil
