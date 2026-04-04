@@ -5,11 +5,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/agents"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/config"
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/evaluation"
+	ghub "github.com/mjhilldigital/conduit-agent-experiment/internal/github"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/ingest"
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/llm"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/models"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/orchestrator"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/reporting"
@@ -28,6 +33,8 @@ func main() {
 	root.AddCommand(newRunCmd())
 	root.AddCommand(newIndexCmd())
 	root.AddCommand(newReportCmd())
+	root.AddCommand(newSelectCmd())
+	root.AddCommand(newScorecardCmd())
 
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
@@ -90,8 +97,18 @@ func newRunCmd() *cobra.Command {
 				return fmt.Errorf("loading task: %w", err)
 			}
 
+			var ghAdapter *ghub.Adapter
+			if cfg.GitHub.Owner != "" && cfg.GitHub.Repo != "" {
+				ghAdapter = &ghub.Adapter{
+					Owner:      cfg.GitHub.Owner,
+					Repo:       cfg.GitHub.Repo,
+					BaseBranch: cfg.GitHub.BaseBranch,
+					ForkOwner:  cfg.GitHub.ForkOwner,
+				}
+			}
+
 			fmt.Printf("Running task %s: %s\n", task.ID, task.Title)
-			result, err := orchestrator.RunWorkflow(cmd.Context(), task, cfg, mcfg)
+			result, err := orchestrator.RunWorkflow(cmd.Context(), task, cfg, mcfg, ghAdapter)
 			if err != nil {
 				return fmt.Errorf("workflow failed: %w", err)
 			}
@@ -116,6 +133,10 @@ func newRunCmd() *cobra.Command {
 				return fmt.Errorf("writing dossier JSON: %w", err)
 			}
 
+			if err := evaluation.WriteEvaluationJSON(outDir, result.Evaluation); err != nil {
+				return fmt.Errorf("writing evaluation JSON: %w", err)
+			}
+
 			md, err := reporting.RenderMarkdown(result.Run, result.Dossier, result.Task)
 			if err != nil {
 				return fmt.Errorf("rendering markdown: %w", err)
@@ -128,6 +149,11 @@ func newRunCmd() *cobra.Command {
 			fmt.Printf("\nRun complete: %s\n", result.Run.ID)
 			fmt.Printf("Status: %s\n", result.Run.FinalStatus)
 			fmt.Printf("Output: %s/\n", outDir)
+
+			if result.PRURL != "" {
+				fmt.Printf("PR: %s\n", result.PRURL)
+			}
+
 			return nil
 		},
 	}
@@ -161,6 +187,135 @@ func newReportCmd() *cobra.Command {
 	cmd.Flags().StringVar(&runID, "run-id", "", "run ID to display (required)")
 	cmd.MarkFlagRequired("run-id")
 	return cmd
+}
+
+func newSelectCmd() *cobra.Command {
+	var limit int
+	var labels []string
+	var modelsFile string
+
+	cmd := &cobra.Command{
+		Use:   "select",
+		Short: "Select and rank GitHub issues as candidate tasks",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+
+			mcfg, err := config.LoadModels(modelsFile)
+			if err != nil {
+				return fmt.Errorf("loading models config: %w", err)
+			}
+			if mcfg.APIKey == "" {
+				return fmt.Errorf("GEMINI_API_KEY env var is required")
+			}
+
+			ghAdapter := &ghub.Adapter{
+				Owner:      cfg.GitHub.Owner,
+				Repo:       cfg.GitHub.Repo,
+				BaseBranch: cfg.GitHub.BaseBranch,
+				ForkOwner:  cfg.GitHub.ForkOwner,
+			}
+
+			opts := ghub.IssueListOpts{
+				Limit: 100,
+			}
+			if len(labels) > 0 {
+				opts.Labels = labels
+			}
+
+			issues, err := ghAdapter.ListIssues(cmd.Context(), opts)
+			if err != nil {
+				return fmt.Errorf("listing issues: %w", err)
+			}
+
+			filtered := agents.FilterIssues(issues)
+
+			selectorModel := "gemini-2.5-flash"
+			if rc, ok := mcfg.Roles["selector"]; ok {
+				selectorModel = rc.Model
+			}
+			llmClient := llm.NewClient(mcfg.Provider.BaseURL, mcfg.APIKey, selectorModel)
+
+			ranked, _, err := agents.RankIssues(cmd.Context(), llmClient, selectorModel, filtered)
+			if err != nil {
+				return fmt.Errorf("ranking issues: %w", err)
+			}
+
+			if len(ranked) > limit {
+				ranked = ranked[:limit]
+			}
+
+			// Print summary table.
+			fmt.Printf("%-6s %-12s %-12s %s\n", "Issue", "Difficulty", "BlastRadius", "Rationale")
+			fmt.Println(strings.Repeat("-", 80))
+			for _, r := range ranked {
+				rationale := r.Rationale
+				if len(rationale) > 50 {
+					rationale = rationale[:47] + "..."
+				}
+				fmt.Printf("#%-5d %-12s %-12s %s\n", r.Number, r.Difficulty, r.BlastRadius, rationale)
+			}
+
+			// Build issue lookup map.
+			issueMap := make(map[int]ghub.Issue, len(issues))
+			for _, iss := range issues {
+				issueMap[iss.Number] = iss
+			}
+
+			// Write task JSON files.
+			tasksDir := "data/tasks"
+			if err := os.MkdirAll(tasksDir, 0755); err != nil {
+				return fmt.Errorf("creating tasks dir: %w", err)
+			}
+
+			for _, r := range ranked {
+				iss, ok := issueMap[r.Number]
+				if !ok {
+					continue
+				}
+				task := agents.RankedToTask(r, iss)
+				data, err := json.MarshalIndent(task, "", "  ")
+				if err != nil {
+					return fmt.Errorf("marshalling task %d: %w", r.Number, err)
+				}
+				taskPath := filepath.Join(tasksDir, fmt.Sprintf("task-gh-%d.json", r.Number))
+				if err := os.WriteFile(taskPath, data, 0644); err != nil {
+					return fmt.Errorf("writing task file %s: %w", taskPath, err)
+				}
+				fmt.Printf("Wrote %s\n", taskPath)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().IntVar(&limit, "limit", 5, "maximum number of issues to select")
+	cmd.Flags().StringSliceVar(&labels, "labels", nil, "filter issues by labels")
+	cmd.Flags().StringVar(&modelsFile, "models", "configs/models.yaml", "models config file path")
+	return cmd
+}
+
+func newScorecardCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "scorecard",
+		Short: "Generate a scorecard aggregating all run evaluations",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+
+			sc, err := evaluation.GenerateScorecard(cfg.Reporting.OutputDir)
+			if err != nil {
+				return fmt.Errorf("generating scorecard: %w", err)
+			}
+
+			fmt.Print(evaluation.FormatScorecard(sc))
+			return nil
+		},
+	}
 }
 
 func loadTask(path string) (models.Task, error) {
