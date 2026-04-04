@@ -336,3 +336,38 @@ func TestBuildSymbolIndex_WithTests(t *testing.T) {
 		t.Error("expected TestEngine symbol when WithTests() is used")
 	}
 }
+
+func TestSearchSymbols(t *testing.T) {
+	root := setupSymbolTestRepo(t)
+
+	idx, err := BuildSymbolIndex(root)
+	if err != nil {
+		t.Fatalf("BuildSymbolIndex() error: %v", err)
+	}
+
+	tests := []struct {
+		query     string
+		wantNames []string
+	}{
+		{"Engine", []string{"Engine", "NewEngine", "Start"}}, // Start has Engine as receiver context in signature
+		{"process", []string{"Processor"}},                    // case-insensitive match on name
+		{"context", []string{"Start"}},                        // matches signature containing "context.Context"
+		{"active", []string{"StatusActive"}},                  // matches name
+		{"nonexistent", nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.query, func(t *testing.T) {
+			results := SearchSymbols(idx, tt.query)
+			names := make(map[string]bool)
+			for _, s := range results {
+				names[s.Name] = true
+			}
+			for _, want := range tt.wantNames {
+				if !names[want] {
+					t.Errorf("expected symbol %q in results for query %q", want, tt.query)
+				}
+			}
+		})
+	}
+}

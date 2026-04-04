@@ -286,3 +286,17 @@ func BuildSymbolIndex(repoPath string, opts ...IndexOption) (*SymbolIndex, error
 
 	return idx, nil
 }
+
+// SearchSymbols returns symbols whose Name, Signature, or Doc contain the query (case-insensitive).
+func SearchSymbols(index *SymbolIndex, query string) []Symbol {
+	q := strings.ToLower(query)
+	var results []Symbol
+	for _, s := range index.Symbols {
+		if strings.Contains(strings.ToLower(s.Name), q) ||
+			strings.Contains(strings.ToLower(s.Signature), q) ||
+			strings.Contains(strings.ToLower(s.Doc), q) {
+			results = append(results, s)
+		}
+	}
+	return results
+}
