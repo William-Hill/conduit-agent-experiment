@@ -56,6 +56,26 @@ const reportTemplate = `# Run Report: {{ .Run.ID }}
 {{ range .Dossier.OpenQuestions }}
 - {{ . }}
 {{- end }}
+{{ if .Run.TriageDecision }}
+## Triage
+
+| Field | Value |
+|-------|-------|
+| Decision | {{ .Run.TriageDecision }} |
+| Reason | {{ .Run.TriageReason }} |
+{{ end }}
+{{ if .Run.VerifierSummary }}
+## Verification
+
+**Result:** {{ .Run.VerifierSummary }}
+{{ if .Run.CommandsRun }}
+| Command | Exit Code |
+|---------|-----------|
+{{ range .Run.CommandsRun -}}
+| ` + "`{{ .Command }}`" + ` | {{ .ExitCode }} |
+{{ end }}
+{{- end }}
+{{- end }}
 
 ## Run Details
 

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -58,4 +59,40 @@ func Load(path string) (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+type ModelsConfig struct {
+	Provider ProviderConfig        `mapstructure:"provider"`
+	Roles    map[string]RoleConfig `mapstructure:"roles"`
+	APIKey   string
+}
+
+type ProviderConfig struct {
+	BaseURL string `mapstructure:"base_url"`
+}
+
+type RoleConfig struct {
+	Model string `mapstructure:"model"`
+}
+
+func LoadModels(path string) (ModelsConfig, error) {
+	v := viper.New()
+	v.SetConfigFile(path)
+
+	if err := v.ReadInConfig(); err != nil {
+		return ModelsConfig{}, fmt.Errorf("reading models config %s: %w", path, err)
+	}
+
+	var mcfg ModelsConfig
+	if err := v.Unmarshal(&mcfg); err != nil {
+		return ModelsConfig{}, fmt.Errorf("unmarshalling models config: %w", err)
+	}
+
+	mcfg.APIKey = os.Getenv("GEMINI_API_KEY")
+
+	if strings.TrimSpace(mcfg.Provider.BaseURL) == "" {
+		return ModelsConfig{}, fmt.Errorf("models config: provider.base_url is required")
+	}
+
+	return mcfg, nil
 }

@@ -72,3 +72,55 @@ reporting:
 		t.Errorf("RepoPath = %q, want /override/path", cfg.Target.RepoPath)
 	}
 }
+
+func TestLoadModels(t *testing.T) {
+	dir := t.TempDir()
+	modelsPath := filepath.Join(dir, "models.yaml")
+	content := []byte(`provider:
+  base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"
+
+roles:
+  archivist:
+    model: "gemini-2.5-flash"
+  triage:
+    model: "gemini-2.5-flash"
+`)
+	if err := os.WriteFile(modelsPath, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	mcfg, err := LoadModels(modelsPath)
+	if err != nil {
+		t.Fatalf("LoadModels() error: %v", err)
+	}
+	if mcfg.Provider.BaseURL != "https://generativelanguage.googleapis.com/v1beta/openai/" {
+		t.Errorf("BaseURL = %q, want Gemini endpoint", mcfg.Provider.BaseURL)
+	}
+	if mcfg.Roles["archivist"].Model != "gemini-2.5-flash" {
+		t.Errorf("archivist model = %q, want gemini-2.5-flash", mcfg.Roles["archivist"].Model)
+	}
+}
+
+func TestLoadModelsAPIKeyFromEnv(t *testing.T) {
+	dir := t.TempDir()
+	modelsPath := filepath.Join(dir, "models.yaml")
+	content := []byte(`provider:
+  base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"
+roles:
+  archivist:
+    model: "gemini-2.5-flash"
+`)
+	if err := os.WriteFile(modelsPath, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("GEMINI_API_KEY", "test-key-123")
+
+	mcfg, err := LoadModels(modelsPath)
+	if err != nil {
+		t.Fatalf("LoadModels() error: %v", err)
+	}
+	if mcfg.APIKey != "test-key-123" {
+		t.Errorf("APIKey = %q, want test-key-123", mcfg.APIKey)
+	}
+}

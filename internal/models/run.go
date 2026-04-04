@@ -35,6 +35,11 @@ type Run struct {
 	Outputs          []string      `json:"outputs,omitempty"`
 	FinalStatus      RunStatus     `json:"final_status"`
 	HumanDecision    HumanDecision `json:"human_decision"`
+	TriageDecision   string        `json:"triage_decision,omitempty"`
+	TriageReason     string        `json:"triage_reason,omitempty"`
+	VerifierPass     *bool         `json:"verifier_pass,omitempty"`
+	VerifierSummary  string        `json:"verifier_summary,omitempty"`
+	LLMCalls         []LLMCall     `json:"llm_calls,omitempty"`
 }
 
 // CommandLog records a single command execution during a run.
@@ -44,4 +49,13 @@ type CommandLog struct {
 	Stdout   string    `json:"stdout"`
 	Stderr   string    `json:"stderr"`
 	RunAt    time.Time `json:"run_at"`
+}
+
+// LLMCall records a single LLM invocation during a run.
+type LLMCall struct {
+	Agent    string `json:"agent"`
+	Model    string `json:"model"`
+	Prompt   string `json:"prompt"`
+	Response string `json:"response"`
+	Duration string `json:"duration"`
 }

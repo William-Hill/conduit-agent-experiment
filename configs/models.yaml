@@ -1,13 +1,14 @@
-provider: "anthropic"
+provider:
+  base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"
 
 roles:
   archivist:
-    model: "claude-sonnet-4-6"
+    model: "gemini-2.5-flash"
   triage:
-    model: "claude-sonnet-4-6"
+    model: "gemini-2.5-flash"
   implementer:
-    model: "claude-sonnet-4-6"
+    model: "gemini-2.5-flash"
   verifier:
-    model: "claude-sonnet-4-6"
+    model: "gemini-2.5-flash"
   architect:
-    model: "claude-sonnet-4-6"
+    model: "gemini-2.5-flash"
