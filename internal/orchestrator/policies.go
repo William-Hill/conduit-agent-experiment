@@ -8,11 +8,12 @@ import (
 
 // Policy defines the guardrails for a given experiment phase.
 type Policy struct {
-	MaxDifficulty    models.Difficulty `json:"max_difficulty"`
+	MaxDifficulty    models.Difficulty  `json:"max_difficulty"`
 	MaxBlastRadius   models.BlastRadius `json:"max_blast_radius"`
-	AllowPush        bool              `json:"allow_push"`
-	AllowMerge       bool              `json:"allow_merge"`
-	RequireRationale bool              `json:"require_rationale"`
+	AllowPush        bool               `json:"allow_push"`
+	AllowMerge       bool               `json:"allow_merge"`
+	RequireRationale bool               `json:"require_rationale"`
+	MaxFilesChanged  int                `json:"max_files_changed"`
 }
 
 // DefaultPhase1Policy returns the hardcoded safety policy for milestone 1.
@@ -23,6 +24,7 @@ func DefaultPhase1Policy() Policy {
 		AllowPush:        false,
 		AllowMerge:       false,
 		RequireRationale: true,
+		MaxFilesChanged:  10,
 	}
 }
 
@@ -39,6 +41,14 @@ var blastRadiusRank = map[models.BlastRadius]int{
 	models.BlastRadiusLow:    1,
 	models.BlastRadiusMedium: 2,
 	models.BlastRadiusHigh:   3,
+}
+
+// CheckPatchBreadth returns an error if the number of changed files exceeds the policy max.
+func (p Policy) CheckPatchBreadth(numFiles int) error {
+	if p.MaxFilesChanged > 0 && numFiles > p.MaxFilesChanged {
+		return fmt.Errorf("patch touches %d files, exceeds policy max %d", numFiles, p.MaxFilesChanged)
+	}
+	return nil
 }
 
 // CheckTask returns an error if the task violates the policy.
