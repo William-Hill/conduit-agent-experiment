@@ -204,8 +204,8 @@ func TestCreateBranchAndPush(t *testing.T) {
 		Owner:      "testowner",
 		Repo:       "testrepo",
 		BaseBranch: "main",
-		ForkOwner:  "forkowner",
-		GHPath:     "gh", // not used in CreateBranchAndPush
+		ForkOwner:  "testowner", // same as Owner so push goes to "origin"
+		GHPath:     "gh",        // not used in CreateBranchAndPush
 	}
 
 	if err := a.CreateBranchAndPush(context.Background(), repoDir, "test-branch", "test commit message"); err != nil {
@@ -220,5 +220,64 @@ func TestCreateBranchAndPush(t *testing.T) {
 	}
 	if len(out) == 0 {
 		t.Error("branch 'test-branch' was not created")
+	}
+}
+
+func TestCreateBranchAndPush_ForkRemote(t *testing.T) {
+	// Set up a real git repo in a temp dir
+	repoDir := t.TempDir()
+
+	gitCmds := []string{
+		"git init",
+		"git config user.email test@test.com",
+		"git config user.name Test",
+		"echo 'hello' > file.txt",
+		"git add .",
+		"git commit -m 'initial commit'",
+	}
+	for _, c := range gitCmds {
+		cmd := runShellInDir(c, repoDir)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("setup %q failed: %v\n%s", c, err, out)
+		}
+	}
+
+	// Set up a bare remote to act as the fork
+	forkDir := t.TempDir()
+	if out, err := runShellInDir("git init --bare", forkDir).CombinedOutput(); err != nil {
+		t.Fatalf("fork setup: %v\n%s", err, out)
+	}
+
+	// Add a new file so there is something to commit
+	if err := os.WriteFile(filepath.Join(repoDir, "fork_file.txt"), []byte("fork content\n"), 0644); err != nil {
+		t.Fatalf("write new file: %v", err)
+	}
+
+	// Manually add the fork remote pointing to our bare repo so push succeeds
+	addForkCmd := "git remote add fork " + forkDir
+	if out, err := runShellInDir(addForkCmd, repoDir).CombinedOutput(); err != nil {
+		t.Fatalf("add fork remote: %v\n%s", err, out)
+	}
+
+	a := &Adapter{
+		Owner:      "upstream-owner",
+		Repo:       "testrepo",
+		BaseBranch: "main",
+		ForkOwner:  "fork-owner", // differs from Owner, triggers fork logic
+		GHPath:     "gh",
+	}
+
+	if err := a.CreateBranchAndPush(context.Background(), repoDir, "fork-branch", "test fork commit"); err != nil {
+		t.Fatalf("CreateBranchAndPush() with fork error: %v", err)
+	}
+
+	// Verify the branch was created locally
+	cmd := runShellInDir("git branch --list fork-branch", repoDir)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("checking branch: %v", err)
+	}
+	if len(out) == 0 {
+		t.Error("branch 'fork-branch' was not created")
 	}
 }

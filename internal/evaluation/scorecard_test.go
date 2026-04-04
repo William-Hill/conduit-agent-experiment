@@ -34,6 +34,7 @@ func TestGenerateScorecard(t *testing.T) {
 		Difficulty:         "L1",
 		ImplementerSuccess: true,
 		VerifierPass:       true,
+		ArchitectDecision:  "approve",
 		PRCreated:          true,
 		FilesChanged:       4,
 		DiffLines:          80,

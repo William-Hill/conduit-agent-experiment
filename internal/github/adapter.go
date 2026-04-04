@@ -119,11 +119,23 @@ func (a *Adapter) GetIssue(ctx context.Context, number int) (*Issue, error) {
 // in the given worktree directory.
 func (a *Adapter) CreateBranchAndPush(ctx context.Context, worktreeDir, branch, commitMsg string) error {
 	cmds := [][]string{
-		{"git", "checkout", "-b", branch},
+		{"git", "checkout", "-B", branch},
 		{"git", "add", "-A"},
 		{"git", "commit", "-m", commitMsg},
-		{"git", "push", "origin", branch},
 	}
+
+	// Determine push remote: if fork differs from upstream, add fork as a remote
+	pushRemote := "origin"
+	if a.ForkOwner != "" && a.ForkOwner != a.Owner {
+		forkURL := fmt.Sprintf("https://github.com/%s/%s.git", a.ForkOwner, a.Repo)
+		// Add fork remote (ignore error if already exists)
+		addRemote := exec.CommandContext(ctx, "git", "remote", "add", "fork", forkURL)
+		addRemote.Dir = worktreeDir
+		addRemote.CombinedOutput() // ignore error — remote may already exist
+		pushRemote = "fork"
+	}
+
+	cmds = append(cmds, []string{"git", "push", "-u", pushRemote, branch})
 
 	for _, args := range cmds {
 		cmd := exec.CommandContext(ctx, args[0], args[1:]...)

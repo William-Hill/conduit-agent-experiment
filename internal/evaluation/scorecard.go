@@ -62,7 +62,7 @@ func GenerateScorecard(runsDir string) (Scorecard, error) {
 		totalDiff += ev.DiffLines
 		totalLLM += ev.LLMCalls
 
-		if ev.ImplementerSuccess && ev.VerifierPass {
+		if ev.ImplementerSuccess && ev.VerifierPass && ev.ArchitectDecision == "approve" {
 			sc.SuccessfulRuns++
 			if ev.Difficulty != "" {
 				sc.SuccessByDifficulty[ev.Difficulty]++
