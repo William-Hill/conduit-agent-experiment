@@ -12,3 +12,5 @@ roles:
     model: "gemini-2.5-flash"
   architect:
     model: "gemini-2.5-flash"
+  selector:
+    model: "gemini-2.5-flash"
