@@ -1,0 +1,16 @@
+{
+  "id": "task-gh-576",
+  "title": "Return proper HTTP status codes instead of 500 for validation errors",
+  "source": "github#576",
+  "description": "All API errors are returned as HTTP 500 regardless of cause. Starting a pipeline with no connectors returns 500 instead of 400, and creating a connector with invalid config returns 500 instead of 400. Error messages are also not documented in the Swagger/OpenAPI spec.",
+  "labels": ["bug"],
+  "difficulty": "L1",
+  "blast_radius": "low",
+  "acceptance_criteria": [
+    "Validation errors return HTTP 400 instead of 500",
+    "At least the two documented examples return correct status codes",
+    "No changes to successful request behavior"
+  ],
+  "issue_number": 576,
+  "status": "pending"
+}

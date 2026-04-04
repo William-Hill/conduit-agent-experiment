@@ -1,0 +1,16 @@
+{
+  "id": "task-gh-645",
+  "title": "Automate version constant update in built-in connectors",
+  "source": "github#645",
+  "description": "Built-in connectors each have a manually maintained version constant that diverges from actual release tags. The fix is a CI action that ensures the version constant matches the release tag at release time.",
+  "labels": ["housekeeping"],
+  "difficulty": "L1",
+  "blast_radius": "low",
+  "acceptance_criteria": [
+    "GitHub Actions workflow that checks or updates version constants at tag time",
+    "Version constant format is documented",
+    "Existing connector behavior is unchanged"
+  ],
+  "issue_number": 645,
+  "status": "pending"
+}

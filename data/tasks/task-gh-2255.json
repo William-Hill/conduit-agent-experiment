@@ -1,0 +1,16 @@
+{
+  "id": "task-gh-2255",
+  "title": "Fix multi-pipeline YAML provisioning failure on invalid version",
+  "source": "github#2255",
+  "description": "When a multi-document YAML file contains one pipeline section with an unrecognized version (e.g., version: 4), the entire provisioning run fails with a hard error instead of skipping the bad document and continuing with the valid ones. The fix should catch version-parse errors per document and continue rather than aborting the batch.",
+  "labels": ["bug"],
+  "difficulty": "L1",
+  "blast_radius": "low",
+  "acceptance_criteria": [
+    "Valid pipelines in a multi-doc YAML are provisioned even if one doc has an invalid version",
+    "Invalid version documents produce a warning log, not a fatal error",
+    "Existing single-doc YAML provisioning behavior is unchanged"
+  ],
+  "issue_number": 2255,
+  "status": "pending"
+}
