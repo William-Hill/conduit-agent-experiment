@@ -285,6 +285,45 @@ func TestGenerateScorecard_RejectionRateByFailureMode_NoFailures(t *testing.T) {
 	}
 }
 
+// TestGenerateScorecard_FailureModeIgnoredOnSuccess verifies that a successful run
+// carrying a stale FailureMode does not contribute to FailureModes or
+// RejectionRateByFailureMode. Regression for coderabbit review on PR #9.
+func TestGenerateScorecard_FailureModeIgnoredOnSuccess(t *testing.T) {
+	runsDir := t.TempDir()
+
+	// Successful run with a stale FailureMode value (should be ignored).
+	writeEvaluation(t, filepath.Join(runsDir, "run-ok-stale"), models.Evaluation{
+		RunID:              "run-ok-stale",
+		TaskID:             "task-ok-stale",
+		ImplementerSuccess: true,
+		VerifierPass:       true,
+		ArchitectDecision:  "approve",
+		FailureMode:        models.FailureHallucination, // stale, must not count
+	})
+
+	// Genuine failure with the same mode.
+	writeEvaluation(t, filepath.Join(runsDir, "run-fail"), models.Evaluation{
+		RunID:       "run-fail",
+		TaskID:      "task-fail",
+		FailureMode: models.FailureHallucination,
+	})
+
+	sc, err := GenerateScorecard(runsDir)
+	if err != nil {
+		t.Fatalf("GenerateScorecard() error: %v", err)
+	}
+
+	// Only the real failure should appear in FailureModes.
+	if got := sc.FailureModes[string(models.FailureHallucination)]; got != 1 {
+		t.Errorf("FailureModes[hallucination] = %d, want 1 (successful run's stale FailureMode must be ignored)", got)
+	}
+
+	// totalFailed = 2 - 1 = 1, so rate should be 1/1 = 1.0, never above 1.0.
+	if got := sc.RejectionRateByFailureMode[string(models.FailureHallucination)]; got != 1.0 {
+		t.Errorf("RejectionRateByFailureMode[hallucination] = %v, want 1.0", got)
+	}
+}
+
 func TestGenerateScorecard_QualitativeScores_None(t *testing.T) {
 	runsDir := t.TempDir()
 
@@ -495,7 +534,9 @@ func TestFormatScorecard_NewSections_Populated(t *testing.T) {
 }
 
 func TestFormatScorecard_NewSections_Omitted(t *testing.T) {
-	// Scorecard with no new metrics populated — new sections should be absent.
+	// Scorecard with no optional data — data-dependent sections should be absent.
+	// Note: Pass Rates renders whenever TotalRuns > 0 (even when all rates are 0.00),
+	// so "all failed" is distinguishable from "metric absent".
 	sc := Scorecard{
 		TotalRuns:      1,
 		SuccessfulRuns: 1,
@@ -506,10 +547,6 @@ func TestFormatScorecard_NewSections_Omitted(t *testing.T) {
 	// Qualitative Scores section should not render at all when QualitativeScoreCount == 0.
 	if strings.Contains(out, "Qualitative Scores") {
 		t.Error("FormatScorecard should not render Qualitative Scores section when no runs scored")
-	}
-	// Pass Rates section also should not render when LintPassRate/BuildPassRate/TestsPassRate all 0.
-	if strings.Contains(out, "Pass Rates") {
-		t.Error("FormatScorecard should not render Pass Rates section when all pass rates are 0")
 	}
 	// Acceptance & Rejection Rates section should not render when both maps are empty.
 	if strings.Contains(out, "Acceptance & Rejection Rates") {

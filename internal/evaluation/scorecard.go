@@ -96,7 +96,8 @@ func GenerateScorecard(runsDir string) (Scorecard, error) {
 			runsByDifficulty[ev.Difficulty]++
 		}
 
-		if ev.ImplementerSuccess && ev.VerifierPass && ev.ArchitectDecision == "approve" {
+		successful := ev.ImplementerSuccess && ev.VerifierPass && ev.ArchitectDecision == "approve"
+		if successful {
 			sc.SuccessfulRuns++
 			if ev.Difficulty != "" {
 				sc.SuccessByDifficulty[ev.Difficulty]++
@@ -107,7 +108,10 @@ func GenerateScorecard(runsDir string) (Scorecard, error) {
 			sc.PRsCreated++
 		}
 
-		if ev.FailureMode != "" {
+		// Only count FailureMode for actually-failed runs. A stale failure_mode
+		// on an approved run would otherwise inflate RejectionRateByFailureMode
+		// beyond 1.0 (numerator includes the run, denominator totalFailed does not).
+		if !successful && ev.FailureMode != "" {
 			sc.FailureModes[string(ev.FailureMode)]++
 		}
 
