@@ -1,7 +1,6 @@
 package evaluation
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,12 +14,8 @@ func writeEvaluation(t *testing.T, dir string, ev models.Evaluation) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir %s: %v", dir, err)
 	}
-	data, err := json.Marshal(ev)
-	if err != nil {
-		t.Fatalf("marshal evaluation: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "evaluation.json"), data, 0o644); err != nil {
-		t.Fatalf("write evaluation.json: %v", err)
+	if err := WriteEvaluationJSON(dir, ev); err != nil {
+		t.Fatalf("WriteEvaluationJSON: %v", err)
 	}
 }
 
@@ -111,6 +106,351 @@ func TestGenerateScorecard_EmptyDir(t *testing.T) {
 	}
 }
 
+func TestGenerateScorecard_PassRates(t *testing.T) {
+	runsDir := t.TempDir()
+
+	// Run 1: lint + build + tests all pass
+	writeEvaluation(t, filepath.Join(runsDir, "run-a"), models.Evaluation{
+		RunID:     "run-a",
+		TaskID:    "task-a",
+		LintPass:  true,
+		BuildPass: true,
+		TestsPass: true,
+	})
+
+	// Run 2: only build passes
+	writeEvaluation(t, filepath.Join(runsDir, "run-b"), models.Evaluation{
+		RunID:     "run-b",
+		TaskID:    "task-b",
+		LintPass:  false,
+		BuildPass: true,
+		TestsPass: false,
+	})
+
+	// Run 3: nothing passes
+	writeEvaluation(t, filepath.Join(runsDir, "run-c"), models.Evaluation{
+		RunID:     "run-c",
+		TaskID:    "task-c",
+		LintPass:  false,
+		BuildPass: false,
+		TestsPass: false,
+	})
+
+	sc, err := GenerateScorecard(runsDir)
+	if err != nil {
+		t.Fatalf("GenerateScorecard() error: %v", err)
+	}
+
+	// Denominator is TotalRuns = 3.
+	wantLint := 1.0 / 3.0
+	wantBuild := 2.0 / 3.0
+	wantTests := 1.0 / 3.0
+
+	if sc.LintPassRate != wantLint {
+		t.Errorf("LintPassRate = %v, want %v", sc.LintPassRate, wantLint)
+	}
+	if sc.BuildPassRate != wantBuild {
+		t.Errorf("BuildPassRate = %v, want %v", sc.BuildPassRate, wantBuild)
+	}
+	if sc.TestsPassRate != wantTests {
+		t.Errorf("TestsPassRate = %v, want %v", sc.TestsPassRate, wantTests)
+	}
+}
+
+func TestGenerateScorecard_AcceptanceRateByDifficulty(t *testing.T) {
+	runsDir := t.TempDir()
+
+	// L1: 2 runs, 1 success → 0.5 rate
+	writeEvaluation(t, filepath.Join(runsDir, "run-l1-ok"), models.Evaluation{
+		RunID:              "run-l1-ok",
+		TaskID:             "task-l1-ok",
+		Difficulty:         "L1",
+		ImplementerSuccess: true,
+		VerifierPass:       true,
+		ArchitectDecision:  "approve",
+	})
+	writeEvaluation(t, filepath.Join(runsDir, "run-l1-fail"), models.Evaluation{
+		RunID:              "run-l1-fail",
+		TaskID:             "task-l1-fail",
+		Difficulty:         "L1",
+		ImplementerSuccess: false,
+	})
+
+	// L2: 1 run, 1 success → 1.0 rate
+	writeEvaluation(t, filepath.Join(runsDir, "run-l2-ok"), models.Evaluation{
+		RunID:              "run-l2-ok",
+		TaskID:             "task-l2-ok",
+		Difficulty:         "L2",
+		ImplementerSuccess: true,
+		VerifierPass:       true,
+		ArchitectDecision:  "approve",
+	})
+
+	// L3: 1 run, 0 successes → difficulty present in runsByDifficulty but not in SuccessByDifficulty.
+	// Expected behavior: the rate map includes L3 with value 0.0 because we iterate runsByDifficulty keys.
+	writeEvaluation(t, filepath.Join(runsDir, "run-l3-fail"), models.Evaluation{
+		RunID:              "run-l3-fail",
+		TaskID:             "task-l3-fail",
+		Difficulty:         "L3",
+		ImplementerSuccess: false,
+	})
+
+	sc, err := GenerateScorecard(runsDir)
+	if err != nil {
+		t.Fatalf("GenerateScorecard() error: %v", err)
+	}
+
+	if got := sc.AcceptanceRateByDifficulty["L1"]; got != 0.5 {
+		t.Errorf("AcceptanceRateByDifficulty[L1] = %v, want 0.5", got)
+	}
+	if got := sc.AcceptanceRateByDifficulty["L2"]; got != 1.0 {
+		t.Errorf("AcceptanceRateByDifficulty[L2] = %v, want 1.0", got)
+	}
+	if got, ok := sc.AcceptanceRateByDifficulty["L3"]; !ok || got != 0.0 {
+		t.Errorf("AcceptanceRateByDifficulty[L3] = %v (present=%v), want 0.0 present", got, ok)
+	}
+}
+
+func TestGenerateScorecard_RejectionRateByFailureMode(t *testing.T) {
+	runsDir := t.TempDir()
+
+	// 5 runs: 2 successful, 3 failed with different modes.
+	writeEvaluation(t, filepath.Join(runsDir, "run-ok-1"), models.Evaluation{
+		RunID:              "run-ok-1",
+		TaskID:             "task-ok-1",
+		ImplementerSuccess: true,
+		VerifierPass:       true,
+		ArchitectDecision:  "approve",
+	})
+	writeEvaluation(t, filepath.Join(runsDir, "run-ok-2"), models.Evaluation{
+		RunID:              "run-ok-2",
+		TaskID:             "task-ok-2",
+		ImplementerSuccess: true,
+		VerifierPass:       true,
+		ArchitectDecision:  "approve",
+	})
+	writeEvaluation(t, filepath.Join(runsDir, "run-fail-1"), models.Evaluation{
+		RunID:       "run-fail-1",
+		TaskID:      "task-fail-1",
+		FailureMode: models.FailureHallucination,
+	})
+	writeEvaluation(t, filepath.Join(runsDir, "run-fail-2"), models.Evaluation{
+		RunID:       "run-fail-2",
+		TaskID:      "task-fail-2",
+		FailureMode: models.FailureHallucination,
+	})
+	writeEvaluation(t, filepath.Join(runsDir, "run-fail-3"), models.Evaluation{
+		RunID:       "run-fail-3",
+		TaskID:      "task-fail-3",
+		FailureMode: models.FailureArchitectureDrift,
+	})
+
+	sc, err := GenerateScorecard(runsDir)
+	if err != nil {
+		t.Fatalf("GenerateScorecard() error: %v", err)
+	}
+
+	// Total failed = 5 - 2 = 3
+	// Hallucination: 2/3 ≈ 0.6667
+	// ArchitectureDrift: 1/3 ≈ 0.3333
+	wantHallucination := 2.0 / 3.0
+	wantDrift := 1.0 / 3.0
+
+	if got := sc.RejectionRateByFailureMode[string(models.FailureHallucination)]; got != wantHallucination {
+		t.Errorf("RejectionRateByFailureMode[hallucination] = %v, want %v", got, wantHallucination)
+	}
+	if got := sc.RejectionRateByFailureMode[string(models.FailureArchitectureDrift)]; got != wantDrift {
+		t.Errorf("RejectionRateByFailureMode[drift] = %v, want %v", got, wantDrift)
+	}
+}
+
+func TestGenerateScorecard_RejectionRateByFailureMode_NoFailures(t *testing.T) {
+	runsDir := t.TempDir()
+
+	writeEvaluation(t, filepath.Join(runsDir, "run-ok"), models.Evaluation{
+		RunID:              "run-ok",
+		TaskID:             "task-ok",
+		ImplementerSuccess: true,
+		VerifierPass:       true,
+		ArchitectDecision:  "approve",
+	})
+
+	sc, err := GenerateScorecard(runsDir)
+	if err != nil {
+		t.Fatalf("GenerateScorecard() error: %v", err)
+	}
+
+	if len(sc.RejectionRateByFailureMode) != 0 {
+		t.Errorf("RejectionRateByFailureMode should be empty when no runs failed, got %v", sc.RejectionRateByFailureMode)
+	}
+}
+
+// TestGenerateScorecard_FailureModeIgnoredOnSuccess verifies that a successful run
+// carrying a stale FailureMode does not contribute to FailureModes or
+// RejectionRateByFailureMode. Regression for coderabbit review on PR #9.
+func TestGenerateScorecard_FailureModeIgnoredOnSuccess(t *testing.T) {
+	runsDir := t.TempDir()
+
+	// Successful run with a stale FailureMode value (should be ignored).
+	writeEvaluation(t, filepath.Join(runsDir, "run-ok-stale"), models.Evaluation{
+		RunID:              "run-ok-stale",
+		TaskID:             "task-ok-stale",
+		ImplementerSuccess: true,
+		VerifierPass:       true,
+		ArchitectDecision:  "approve",
+		FailureMode:        models.FailureHallucination, // stale, must not count
+	})
+
+	// Genuine failure with the same mode.
+	writeEvaluation(t, filepath.Join(runsDir, "run-fail"), models.Evaluation{
+		RunID:       "run-fail",
+		TaskID:      "task-fail",
+		FailureMode: models.FailureHallucination,
+	})
+
+	sc, err := GenerateScorecard(runsDir)
+	if err != nil {
+		t.Fatalf("GenerateScorecard() error: %v", err)
+	}
+
+	// Only the real failure should appear in FailureModes.
+	if got := sc.FailureModes[string(models.FailureHallucination)]; got != 1 {
+		t.Errorf("FailureModes[hallucination] = %d, want 1 (successful run's stale FailureMode must be ignored)", got)
+	}
+
+	// totalFailed = 2 - 1 = 1, so rate should be 1/1 = 1.0, never above 1.0.
+	if got := sc.RejectionRateByFailureMode[string(models.FailureHallucination)]; got != 1.0 {
+		t.Errorf("RejectionRateByFailureMode[hallucination] = %v, want 1.0", got)
+	}
+}
+
+func TestGenerateScorecard_QualitativeScores_None(t *testing.T) {
+	runsDir := t.TempDir()
+
+	writeEvaluation(t, filepath.Join(runsDir, "run-1"), models.Evaluation{
+		RunID:  "run-1",
+		TaskID: "task-1",
+	})
+	writeEvaluation(t, filepath.Join(runsDir, "run-2"), models.Evaluation{
+		RunID:  "run-2",
+		TaskID: "task-2",
+	})
+
+	sc, err := GenerateScorecard(runsDir)
+	if err != nil {
+		t.Fatalf("GenerateScorecard() error: %v", err)
+	}
+
+	if sc.QualitativeScoreCount != 0 {
+		t.Errorf("QualitativeScoreCount = %d, want 0", sc.QualitativeScoreCount)
+	}
+	if len(sc.AvgQualitativeScores) != 0 {
+		t.Errorf("AvgQualitativeScores should be empty, got %v", sc.AvgQualitativeScores)
+	}
+}
+
+func TestGenerateScorecard_QualitativeScores_Partial(t *testing.T) {
+	runsDir := t.TempDir()
+
+	// Run 1: scores architectural_alignment and rationale_clarity only
+	writeEvaluation(t, filepath.Join(runsDir, "run-1"), models.Evaluation{
+		RunID:                  "run-1",
+		TaskID:                 "task-1",
+		ArchitecturalAlignment: 4,
+		RationaleClarity:       3,
+	})
+
+	// Run 2: scores architectural_alignment and patch_readability only
+	writeEvaluation(t, filepath.Join(runsDir, "run-2"), models.Evaluation{
+		RunID:                  "run-2",
+		TaskID:                 "task-2",
+		ArchitecturalAlignment: 5,
+		PatchReadability:       4,
+	})
+
+	// Run 3: scores nothing
+	writeEvaluation(t, filepath.Join(runsDir, "run-3"), models.Evaluation{
+		RunID:  "run-3",
+		TaskID: "task-3",
+	})
+
+	sc, err := GenerateScorecard(runsDir)
+	if err != nil {
+		t.Fatalf("GenerateScorecard() error: %v", err)
+	}
+
+	// 2 runs had at least one qualitative score (runs 1 and 2).
+	if sc.QualitativeScoreCount != 2 {
+		t.Errorf("QualitativeScoreCount = %d, want 2", sc.QualitativeScoreCount)
+	}
+
+	// architectural_alignment: (4+5)/2 = 4.5
+	if got := sc.AvgQualitativeScores["architectural_alignment"]; got != 4.5 {
+		t.Errorf("AvgQualitativeScores[architectural_alignment] = %v, want 4.5", got)
+	}
+	// rationale_clarity: only run 1 scored → 3/1 = 3
+	if got := sc.AvgQualitativeScores["rationale_clarity"]; got != 3.0 {
+		t.Errorf("AvgQualitativeScores[rationale_clarity] = %v, want 3.0", got)
+	}
+	// patch_readability: only run 2 scored → 4/1 = 4
+	if got := sc.AvgQualitativeScores["patch_readability"]; got != 4.0 {
+		t.Errorf("AvgQualitativeScores[patch_readability] = %v, want 4.0", got)
+	}
+	// retrieval_usefulness: no one scored → should be absent from map
+	if _, ok := sc.AvgQualitativeScores["retrieval_usefulness"]; ok {
+		t.Errorf("AvgQualitativeScores should not contain retrieval_usefulness when no run scored it")
+	}
+	// reviewer_confidence: no one scored → should be absent from map
+	if _, ok := sc.AvgQualitativeScores["reviewer_confidence"]; ok {
+		t.Errorf("AvgQualitativeScores should not contain reviewer_confidence when no run scored it")
+	}
+}
+
+func TestGenerateScorecard_QualitativeScores_All(t *testing.T) {
+	runsDir := t.TempDir()
+
+	writeEvaluation(t, filepath.Join(runsDir, "run-a"), models.Evaluation{
+		RunID:                  "run-a",
+		TaskID:                 "task-a",
+		ArchitecturalAlignment: 5,
+		RationaleClarity:       4,
+		RetrievalUsefulness:    3,
+		ReviewerConfidence:     4,
+		PatchReadability:       5,
+	})
+	writeEvaluation(t, filepath.Join(runsDir, "run-b"), models.Evaluation{
+		RunID:                  "run-b",
+		TaskID:                 "task-b",
+		ArchitecturalAlignment: 3,
+		RationaleClarity:       2,
+		RetrievalUsefulness:    5,
+		ReviewerConfidence:     2,
+		PatchReadability:       3,
+	})
+
+	sc, err := GenerateScorecard(runsDir)
+	if err != nil {
+		t.Fatalf("GenerateScorecard() error: %v", err)
+	}
+
+	if sc.QualitativeScoreCount != 2 {
+		t.Errorf("QualitativeScoreCount = %d, want 2", sc.QualitativeScoreCount)
+	}
+
+	expected := map[string]float64{
+		"architectural_alignment": 4.0,
+		"rationale_clarity":       3.0,
+		"retrieval_usefulness":    4.0,
+		"reviewer_confidence":     3.0,
+		"patch_readability":       4.0,
+	}
+	for metric, want := range expected {
+		if got := sc.AvgQualitativeScores[metric]; got != want {
+			t.Errorf("AvgQualitativeScores[%s] = %v, want %v", metric, got, want)
+		}
+	}
+}
+
 func TestFormatScorecard(t *testing.T) {
 	sc := Scorecard{
 		TotalRuns:       2,
@@ -145,5 +485,71 @@ func TestFormatScorecard(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("FormatScorecard output missing %q", want)
 		}
+	}
+}
+
+func TestFormatScorecard_NewSections_Populated(t *testing.T) {
+	sc := Scorecard{
+		TotalRuns:       3,
+		SuccessfulRuns:  2,
+		AvgLLMCalls:     7.5,
+		LintPassRate:    0.67,
+		BuildPassRate:   1.0,
+		TestsPassRate:   0.33,
+		AcceptanceRateByDifficulty: map[string]float64{
+			"L1": 1.0,
+			"L2": 0.5,
+		},
+		RejectionRateByFailureMode: map[string]float64{
+			string(models.FailureHallucination): 1.0,
+		},
+		QualitativeScoreCount: 2,
+		AvgQualitativeScores: map[string]float64{
+			"architectural_alignment": 4.5,
+			"rationale_clarity":       3.0,
+		},
+	}
+
+	out := FormatScorecard(sc)
+
+	checks := []string{
+		"Avg Iterations", // summary row rendered from AvgLLMCalls
+		"Pass Rates",          // section header
+		"Lint",
+		"Build",
+		"Tests",
+		"Acceptance & Rejection Rates", // section header
+		"Acceptance Rate",
+		"Rejection Rate",
+		"Qualitative Scores",           // section header
+		"Scored runs: 2",
+		"architectural_alignment",
+		"rationale_clarity",
+	}
+	for _, want := range checks {
+		if !strings.Contains(out, want) {
+			t.Errorf("FormatScorecard output missing %q", want)
+		}
+	}
+}
+
+func TestFormatScorecard_NewSections_Omitted(t *testing.T) {
+	// Scorecard with no optional data — data-dependent sections should be absent.
+	// Note: Pass Rates renders whenever TotalRuns > 0 (even when all rates are 0.00),
+	// so "all failed" is distinguishable from "metric absent".
+	sc := Scorecard{
+		TotalRuns:      1,
+		SuccessfulRuns: 1,
+	}
+
+	out := FormatScorecard(sc)
+
+	// Qualitative Scores section should not render at all when QualitativeScoreCount == 0.
+	if strings.Contains(out, "Qualitative Scores") {
+		t.Error("FormatScorecard should not render Qualitative Scores section when no runs scored")
+	}
+	// Acceptance & Rejection Rates section should not render when both maps are empty.
+	if strings.Contains(out, "Acceptance & Rejection Rates") {
+		t.Error("FormatScorecard should not render Acceptance & Rejection Rates section when both rate maps are empty")
 	}
 }
