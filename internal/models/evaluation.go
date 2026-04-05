@@ -43,4 +43,12 @@ type Evaluation struct {
 	ReviewScore         int         `json:"review_score,omitempty"`
 	ArchitectureScore   int         `json:"architecture_score,omitempty"`
 	Notes               string      `json:"notes,omitempty"`
+
+	// Qualitative scores (1-5, 0 or omitted means not scored).
+	// Typically filled in manually post-run by a human reviewer.
+	ArchitecturalAlignment int `json:"architectural_alignment,omitempty"`
+	RationaleClarity       int `json:"rationale_clarity,omitempty"`
+	RetrievalUsefulness    int `json:"retrieval_usefulness,omitempty"`
+	ReviewerConfidence     int `json:"reviewer_confidence,omitempty"`
+	PatchReadability       int `json:"patch_readability,omitempty"`
 }

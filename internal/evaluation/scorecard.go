@@ -21,6 +21,22 @@ type Scorecard struct {
 	AvgLLMCalls         float64        `json:"avg_llm_calls"`
 	SuccessByDifficulty map[string]int `json:"success_by_difficulty"`
 	FailureModes        map[string]int `json:"failure_modes"`
+
+	// Pass rates (denominator: TotalRuns).
+	LintPassRate  float64 `json:"lint_pass_rate"`
+	BuildPassRate float64 `json:"build_pass_rate"`
+	TestsPassRate float64 `json:"tests_pass_rate"`
+
+	// Iteration proxy (denominator: TotalRuns).
+	AvgIterations float64 `json:"avg_iterations"`
+
+	// Rate versions of existing count maps.
+	AcceptanceRateByDifficulty map[string]float64 `json:"acceptance_rate_by_difficulty"`
+	RejectionRateByFailureMode map[string]float64 `json:"rejection_rate_by_failure_mode"`
+
+	// Qualitative aggregation (populated only when any run has scores).
+	QualitativeScoreCount int                `json:"qualitative_score_count"`
+	AvgQualitativeScores  map[string]float64 `json:"avg_qualitative_scores"`
 }
 
 // GenerateScorecard reads all evaluation.json files from subdirectories of
