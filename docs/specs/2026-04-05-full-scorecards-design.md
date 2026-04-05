@@ -73,13 +73,13 @@ When `TotalRuns == 0`, all rates are `0.0`.
 
 ### Acceptance rate by difficulty
 
-Needs a new counter: `runsByDifficulty map[string]int` accumulated during the loop. For each difficulty key present in `SuccessByDifficulty`:
+Needs a new counter: `runsByDifficulty map[string]int` accumulated during the loop. For every observed difficulty (each key in `runsByDifficulty`):
 
 ```
 AcceptanceRateByDifficulty[k] = SuccessByDifficulty[k] / runsByDifficulty[k]
 ```
 
-Zero-total keys are omitted (no division by zero).
+This ensures difficulties with zero successes are included in `AcceptanceRateByDifficulty` and yield `0.00`. Zero-total keys are omitted (no division by zero).
 
 ### Rejection rate by failure mode
 
