@@ -192,6 +192,60 @@ func TestGenerateScorecard_AvgIterations(t *testing.T) {
 	}
 }
 
+func TestGenerateScorecard_AcceptanceRateByDifficulty(t *testing.T) {
+	runsDir := t.TempDir()
+
+	// L1: 2 runs, 1 success → 0.5 rate
+	writeEvaluation(t, filepath.Join(runsDir, "run-l1-ok"), models.Evaluation{
+		RunID:              "run-l1-ok",
+		TaskID:             "task-l1-ok",
+		Difficulty:         "L1",
+		ImplementerSuccess: true,
+		VerifierPass:       true,
+		ArchitectDecision:  "approve",
+	})
+	writeEvaluation(t, filepath.Join(runsDir, "run-l1-fail"), models.Evaluation{
+		RunID:              "run-l1-fail",
+		TaskID:             "task-l1-fail",
+		Difficulty:         "L1",
+		ImplementerSuccess: false,
+	})
+
+	// L2: 1 run, 1 success → 1.0 rate
+	writeEvaluation(t, filepath.Join(runsDir, "run-l2-ok"), models.Evaluation{
+		RunID:              "run-l2-ok",
+		TaskID:             "task-l2-ok",
+		Difficulty:         "L2",
+		ImplementerSuccess: true,
+		VerifierPass:       true,
+		ArchitectDecision:  "approve",
+	})
+
+	// L3: 1 run, 0 successes → difficulty present in runsByDifficulty but not in SuccessByDifficulty.
+	// Expected behavior: the rate map includes L3 with value 0.0 because we iterate runsByDifficulty keys.
+	writeEvaluation(t, filepath.Join(runsDir, "run-l3-fail"), models.Evaluation{
+		RunID:              "run-l3-fail",
+		TaskID:             "task-l3-fail",
+		Difficulty:         "L3",
+		ImplementerSuccess: false,
+	})
+
+	sc, err := GenerateScorecard(runsDir)
+	if err != nil {
+		t.Fatalf("GenerateScorecard() error: %v", err)
+	}
+
+	if got := sc.AcceptanceRateByDifficulty["L1"]; got != 0.5 {
+		t.Errorf("AcceptanceRateByDifficulty[L1] = %v, want 0.5", got)
+	}
+	if got := sc.AcceptanceRateByDifficulty["L2"]; got != 1.0 {
+		t.Errorf("AcceptanceRateByDifficulty[L2] = %v, want 1.0", got)
+	}
+	if got, ok := sc.AcceptanceRateByDifficulty["L3"]; !ok || got != 0.0 {
+		t.Errorf("AcceptanceRateByDifficulty[L3] = %v (present=%v), want 0.0 present", got, ok)
+	}
+}
+
 func TestFormatScorecard(t *testing.T) {
 	sc := Scorecard{
 		TotalRuns:       2,

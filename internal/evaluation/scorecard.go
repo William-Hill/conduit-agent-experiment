@@ -43,8 +43,9 @@ type Scorecard struct {
 // runsDir and aggregates the results into a Scorecard.
 func GenerateScorecard(runsDir string) (Scorecard, error) {
 	sc := Scorecard{
-		SuccessByDifficulty: make(map[string]int),
-		FailureModes:        make(map[string]int),
+		SuccessByDifficulty:        make(map[string]int),
+		FailureModes:               make(map[string]int),
+		AcceptanceRateByDifficulty: make(map[string]float64),
 	}
 
 	entries, err := os.ReadDir(runsDir)
@@ -54,6 +55,7 @@ func GenerateScorecard(runsDir string) (Scorecard, error) {
 
 	var totalFiles, totalDiff, totalLLM int
 	var lintPassCount, buildPassCount, testsPassCount int
+	runsByDifficulty := make(map[string]int)
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -89,6 +91,10 @@ func GenerateScorecard(runsDir string) (Scorecard, error) {
 			testsPassCount++
 		}
 
+		if ev.Difficulty != "" {
+			runsByDifficulty[ev.Difficulty]++
+		}
+
 		if ev.ImplementerSuccess && ev.VerifierPass && ev.ArchitectDecision == "approve" {
 			sc.SuccessfulRuns++
 			if ev.Difficulty != "" {
@@ -113,6 +119,12 @@ func GenerateScorecard(runsDir string) (Scorecard, error) {
 		sc.LintPassRate = float64(lintPassCount) / float64(sc.TotalRuns)
 		sc.BuildPassRate = float64(buildPassCount) / float64(sc.TotalRuns)
 		sc.TestsPassRate = float64(testsPassCount) / float64(sc.TotalRuns)
+	}
+
+	for diff, total := range runsByDifficulty {
+		if total > 0 {
+			sc.AcceptanceRateByDifficulty[diff] = float64(sc.SuccessByDifficulty[diff]) / float64(total)
+		}
 	}
 
 	return sc, nil
