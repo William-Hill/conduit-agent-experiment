@@ -1,7 +1,6 @@
 package evaluation
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,12 +14,8 @@ func writeEvaluation(t *testing.T, dir string, ev models.Evaluation) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir %s: %v", dir, err)
 	}
-	data, err := json.Marshal(ev)
-	if err != nil {
-		t.Fatalf("marshal evaluation: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "evaluation.json"), data, 0o644); err != nil {
-		t.Fatalf("write evaluation.json: %v", err)
+	if err := WriteEvaluationJSON(dir, ev); err != nil {
+		t.Fatalf("WriteEvaluationJSON: %v", err)
 	}
 }
 
@@ -159,36 +154,6 @@ func TestGenerateScorecard_PassRates(t *testing.T) {
 	}
 	if sc.TestsPassRate != wantTests {
 		t.Errorf("TestsPassRate = %v, want %v", sc.TestsPassRate, wantTests)
-	}
-}
-
-func TestGenerateScorecard_AvgIterations(t *testing.T) {
-	runsDir := t.TempDir()
-
-	writeEvaluation(t, filepath.Join(runsDir, "run-1"), models.Evaluation{
-		RunID:    "run-1",
-		TaskID:   "task-1",
-		LLMCalls: 4,
-	})
-	writeEvaluation(t, filepath.Join(runsDir, "run-2"), models.Evaluation{
-		RunID:    "run-2",
-		TaskID:   "task-2",
-		LLMCalls: 10,
-	})
-	writeEvaluation(t, filepath.Join(runsDir, "run-3"), models.Evaluation{
-		RunID:    "run-3",
-		TaskID:   "task-3",
-		LLMCalls: 7,
-	})
-
-	sc, err := GenerateScorecard(runsDir)
-	if err != nil {
-		t.Fatalf("GenerateScorecard() error: %v", err)
-	}
-
-	wantAvg := (4.0 + 10.0 + 7.0) / 3.0
-	if sc.AvgIterations != wantAvg {
-		t.Errorf("AvgIterations = %v, want %v", sc.AvgIterations, wantAvg)
 	}
 }
 
@@ -488,7 +453,7 @@ func TestFormatScorecard_NewSections_Populated(t *testing.T) {
 	sc := Scorecard{
 		TotalRuns:       3,
 		SuccessfulRuns:  2,
-		AvgIterations:   7.5,
+		AvgLLMCalls:     7.5,
 		LintPassRate:    0.67,
 		BuildPassRate:   1.0,
 		TestsPassRate:   0.33,
@@ -509,7 +474,7 @@ func TestFormatScorecard_NewSections_Populated(t *testing.T) {
 	out := FormatScorecard(sc)
 
 	checks := []string{
-		"Avg Iterations",      // summary row for AvgIterations
+		"Avg Iterations", // summary row rendered from AvgLLMCalls
 		"Pass Rates",          // section header
 		"Lint",
 		"Build",

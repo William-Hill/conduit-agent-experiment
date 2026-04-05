@@ -18,7 +18,7 @@ type Scorecard struct {
 	PRsCreated          int            `json:"prs_created"`
 	AvgFilesChanged     float64        `json:"avg_files_changed"`
 	AvgDiffLines        float64        `json:"avg_diff_lines"`
-	AvgLLMCalls         float64        `json:"avg_llm_calls"`
+	AvgLLMCalls         float64        `json:"avg_llm_calls"` // also rendered as "Avg Iterations" in FormatScorecard
 	SuccessByDifficulty map[string]int `json:"success_by_difficulty"`
 	FailureModes        map[string]int `json:"failure_modes"`
 
@@ -26,9 +26,6 @@ type Scorecard struct {
 	LintPassRate  float64 `json:"lint_pass_rate"`
 	BuildPassRate float64 `json:"build_pass_rate"`
 	TestsPassRate float64 `json:"tests_pass_rate"`
-
-	// Iteration proxy (denominator: TotalRuns).
-	AvgIterations float64 `json:"avg_iterations"`
 
 	// Rate versions of existing count maps.
 	AcceptanceRateByDifficulty map[string]float64 `json:"acceptance_rate_by_difficulty"`
@@ -141,7 +138,6 @@ func GenerateScorecard(runsDir string) (Scorecard, error) {
 		sc.AvgFilesChanged = float64(totalFiles) / float64(sc.TotalRuns)
 		sc.AvgDiffLines = float64(totalDiff) / float64(sc.TotalRuns)
 		sc.AvgLLMCalls = float64(totalLLM) / float64(sc.TotalRuns)
-		sc.AvgIterations = float64(totalLLM) / float64(sc.TotalRuns)
 		sc.LintPassRate = float64(lintPassCount) / float64(sc.TotalRuns)
 		sc.BuildPassRate = float64(buildPassCount) / float64(sc.TotalRuns)
 		sc.TestsPassRate = float64(testsPassCount) / float64(sc.TotalRuns)
@@ -169,6 +165,16 @@ func GenerateScorecard(runsDir string) (Scorecard, error) {
 	return sc, nil
 }
 
+// sortedKeys returns the keys of a string-keyed map in sorted order.
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 // FormatScorecard returns a human-readable markdown table representation of sc.
 func FormatScorecard(sc Scorecard) string {
 	var sb strings.Builder
@@ -184,19 +190,13 @@ func FormatScorecard(sc Scorecard) string {
 	sb.WriteString(fmt.Sprintf("| Avg Files Changed | %.2f |\n", sc.AvgFilesChanged))
 	sb.WriteString(fmt.Sprintf("| Avg Diff Lines | %.2f |\n", sc.AvgDiffLines))
 	sb.WriteString(fmt.Sprintf("| Avg LLM Calls | %.2f |\n", sc.AvgLLMCalls))
-	sb.WriteString(fmt.Sprintf("| Avg Iterations | %.2f |\n", sc.AvgIterations))
+	sb.WriteString(fmt.Sprintf("| Avg Iterations | %.2f |\n", sc.AvgLLMCalls))
 
 	if len(sc.SuccessByDifficulty) > 0 {
 		sb.WriteString("\n## Success by Difficulty\n\n")
 		sb.WriteString("| Difficulty | Successes |\n")
 		sb.WriteString("|------------|----------|\n")
-
-		keys := make([]string, 0, len(sc.SuccessByDifficulty))
-		for k := range sc.SuccessByDifficulty {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
+		for _, k := range sortedKeys(sc.SuccessByDifficulty) {
 			sb.WriteString(fmt.Sprintf("| %s | %d |\n", k, sc.SuccessByDifficulty[k]))
 		}
 	}
@@ -205,13 +205,7 @@ func FormatScorecard(sc Scorecard) string {
 		sb.WriteString("\n## Failure Modes\n\n")
 		sb.WriteString("| Failure Mode | Count |\n")
 		sb.WriteString("|-------------|-------|\n")
-
-		keys := make([]string, 0, len(sc.FailureModes))
-		for k := range sc.FailureModes {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
+		for _, k := range sortedKeys(sc.FailureModes) {
 			sb.WriteString(fmt.Sprintf("| %s | %d |\n", k, sc.FailureModes[k]))
 		}
 	}
@@ -231,12 +225,7 @@ func FormatScorecard(sc Scorecard) string {
 		if len(sc.AcceptanceRateByDifficulty) > 0 {
 			sb.WriteString("| Difficulty | Acceptance Rate |\n")
 			sb.WriteString("|------------|-----------------|\n")
-			keys := make([]string, 0, len(sc.AcceptanceRateByDifficulty))
-			for k := range sc.AcceptanceRateByDifficulty {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
+			for _, k := range sortedKeys(sc.AcceptanceRateByDifficulty) {
 				sb.WriteString(fmt.Sprintf("| %s | %.2f |\n", k, sc.AcceptanceRateByDifficulty[k]))
 			}
 		}
@@ -247,12 +236,7 @@ func FormatScorecard(sc Scorecard) string {
 			}
 			sb.WriteString("| Failure Mode | Rejection Rate |\n")
 			sb.WriteString("|--------------|----------------|\n")
-			keys := make([]string, 0, len(sc.RejectionRateByFailureMode))
-			for k := range sc.RejectionRateByFailureMode {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
+			for _, k := range sortedKeys(sc.RejectionRateByFailureMode) {
 				sb.WriteString(fmt.Sprintf("| %s | %.2f |\n", k, sc.RejectionRateByFailureMode[k]))
 			}
 		}
@@ -263,12 +247,7 @@ func FormatScorecard(sc Scorecard) string {
 		sb.WriteString(fmt.Sprintf("(Scored runs: %d)\n\n", sc.QualitativeScoreCount))
 		sb.WriteString("| Metric | Avg (1-5) |\n")
 		sb.WriteString("|--------|-----------|\n")
-		keys := make([]string, 0, len(sc.AvgQualitativeScores))
-		for k := range sc.AvgQualitativeScores {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
+		for _, k := range sortedKeys(sc.AvgQualitativeScores) {
 			sb.WriteString(fmt.Sprintf("| %s | %.1f |\n", k, sc.AvgQualitativeScores[k]))
 		}
 	}
