@@ -46,6 +46,7 @@ func GenerateScorecard(runsDir string) (Scorecard, error) {
 		SuccessByDifficulty:        make(map[string]int),
 		FailureModes:               make(map[string]int),
 		AcceptanceRateByDifficulty: make(map[string]float64),
+		RejectionRateByFailureMode: make(map[string]float64),
 	}
 
 	entries, err := os.ReadDir(runsDir)
@@ -124,6 +125,13 @@ func GenerateScorecard(runsDir string) (Scorecard, error) {
 	for diff, total := range runsByDifficulty {
 		if total > 0 {
 			sc.AcceptanceRateByDifficulty[diff] = float64(sc.SuccessByDifficulty[diff]) / float64(total)
+		}
+	}
+
+	totalFailed := sc.TotalRuns - sc.SuccessfulRuns
+	if totalFailed > 0 {
+		for mode, count := range sc.FailureModes {
+			sc.RejectionRateByFailureMode[mode] = float64(count) / float64(totalFailed)
 		}
 	}
 

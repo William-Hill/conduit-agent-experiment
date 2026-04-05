@@ -246,6 +246,80 @@ func TestGenerateScorecard_AcceptanceRateByDifficulty(t *testing.T) {
 	}
 }
 
+func TestGenerateScorecard_RejectionRateByFailureMode(t *testing.T) {
+	runsDir := t.TempDir()
+
+	// 5 runs: 2 successful, 3 failed with different modes.
+	writeEvaluation(t, filepath.Join(runsDir, "run-ok-1"), models.Evaluation{
+		RunID:              "run-ok-1",
+		TaskID:             "task-ok-1",
+		ImplementerSuccess: true,
+		VerifierPass:       true,
+		ArchitectDecision:  "approve",
+	})
+	writeEvaluation(t, filepath.Join(runsDir, "run-ok-2"), models.Evaluation{
+		RunID:              "run-ok-2",
+		TaskID:             "task-ok-2",
+		ImplementerSuccess: true,
+		VerifierPass:       true,
+		ArchitectDecision:  "approve",
+	})
+	writeEvaluation(t, filepath.Join(runsDir, "run-fail-1"), models.Evaluation{
+		RunID:       "run-fail-1",
+		TaskID:      "task-fail-1",
+		FailureMode: models.FailureHallucination,
+	})
+	writeEvaluation(t, filepath.Join(runsDir, "run-fail-2"), models.Evaluation{
+		RunID:       "run-fail-2",
+		TaskID:      "task-fail-2",
+		FailureMode: models.FailureHallucination,
+	})
+	writeEvaluation(t, filepath.Join(runsDir, "run-fail-3"), models.Evaluation{
+		RunID:       "run-fail-3",
+		TaskID:      "task-fail-3",
+		FailureMode: models.FailureArchitectureDrift,
+	})
+
+	sc, err := GenerateScorecard(runsDir)
+	if err != nil {
+		t.Fatalf("GenerateScorecard() error: %v", err)
+	}
+
+	// Total failed = 5 - 2 = 3
+	// Hallucination: 2/3 ≈ 0.6667
+	// ArchitectureDrift: 1/3 ≈ 0.3333
+	wantHallucination := 2.0 / 3.0
+	wantDrift := 1.0 / 3.0
+
+	if got := sc.RejectionRateByFailureMode[string(models.FailureHallucination)]; got != wantHallucination {
+		t.Errorf("RejectionRateByFailureMode[hallucination] = %v, want %v", got, wantHallucination)
+	}
+	if got := sc.RejectionRateByFailureMode[string(models.FailureArchitectureDrift)]; got != wantDrift {
+		t.Errorf("RejectionRateByFailureMode[drift] = %v, want %v", got, wantDrift)
+	}
+}
+
+func TestGenerateScorecard_RejectionRateByFailureMode_NoFailures(t *testing.T) {
+	runsDir := t.TempDir()
+
+	writeEvaluation(t, filepath.Join(runsDir, "run-ok"), models.Evaluation{
+		RunID:              "run-ok",
+		TaskID:             "task-ok",
+		ImplementerSuccess: true,
+		VerifierPass:       true,
+		ArchitectDecision:  "approve",
+	})
+
+	sc, err := GenerateScorecard(runsDir)
+	if err != nil {
+		t.Fatalf("GenerateScorecard() error: %v", err)
+	}
+
+	if len(sc.RejectionRateByFailureMode) != 0 {
+		t.Errorf("RejectionRateByFailureMode should be empty when no runs failed, got %v", sc.RejectionRateByFailureMode)
+	}
+}
+
 func TestFormatScorecard(t *testing.T) {
 	sc := Scorecard{
 		TotalRuns:       2,
