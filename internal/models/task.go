@@ -44,6 +44,11 @@ type Task struct {
 	AcceptanceCriteria []string    `json:"acceptance_criteria"`
 	SelectedFiles      []string    `json:"selected_files,omitempty"`
 	RelatedDocs        []string    `json:"related_docs,omitempty"`
-	IssueNumber        int         `json:"issue_number,omitempty"`
-	Status             TaskStatus  `json:"status"`
+	// VerifierCommands, when non-empty, overrides the auto-detected verifier
+	// commands from dossier_builder. Use this to scope verification to a
+	// relevant subset (e.g. package-level tests instead of full make test)
+	// or to bypass known-flaky commands in the target environment.
+	VerifierCommands []string   `json:"verifier_commands,omitempty"`
+	IssueNumber      int        `json:"issue_number,omitempty"`
+	Status           TaskStatus `json:"status"`
 }

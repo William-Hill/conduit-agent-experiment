@@ -71,7 +71,7 @@ func TestEnhanceDossier(t *testing.T) {
 		OpenQuestions:  []string{"original question"},
 	}
 
-	enhanced, llmCall, err := EnhanceDossier(context.Background(), client, "gemini-2.5-flash", task, original)
+	enhanced, llmCalls, err := EnhanceDossier(context.Background(), client, "gemini-2.5-flash", task, original)
 	if err != nil {
 		t.Fatalf("EnhanceDossier() error: %v", err)
 	}
@@ -81,8 +81,11 @@ func TestEnhanceDossier(t *testing.T) {
 	if len(enhanced.RelatedFiles) != 2 {
 		t.Errorf("related files = %d, want 2", len(enhanced.RelatedFiles))
 	}
-	if llmCall.Agent != "archivist" {
-		t.Errorf("llm call agent = %q, want archivist", llmCall.Agent)
+	if len(llmCalls) != 1 {
+		t.Errorf("llm calls = %d, want 1 (no retry on success)", len(llmCalls))
+	}
+	if len(llmCalls) > 0 && llmCalls[0].Agent != "archivist" {
+		t.Errorf("llm call agent = %q, want archivist", llmCalls[0].Agent)
 	}
 }
 

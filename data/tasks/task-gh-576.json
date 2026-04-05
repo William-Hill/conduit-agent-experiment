@@ -11,6 +11,11 @@
     "At least the two documented examples return correct status codes",
     "No changes to successful request behavior"
   ],
+  "verifier_commands": [
+    "go build ./...",
+    "go vet ./...",
+    "go test ./pkg/http/api/..."
+  ],
   "issue_number": 576,
   "status": "pending"
 }

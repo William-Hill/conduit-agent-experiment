@@ -11,5 +11,9 @@
     "No code changes required",
     "Links and formatting validated"
   ],
+  "verifier_commands": [
+    "go build ./...",
+    "go vet ./..."
+  ],
   "status": "pending"
 }

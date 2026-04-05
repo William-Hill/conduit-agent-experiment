@@ -59,7 +59,15 @@ func BuildDossier(task models.Task, inv *ingest.FileInventory) models.Dossier {
 		}
 	}
 
-	commands := determineLikelyCommands(inv)
+	// Prefer a task-level verifier command override if present, so tasks
+	// can scope verification to the relevant subset or bypass known-flaky
+	// commands in the target environment.
+	var commands []string
+	if len(task.VerifierCommands) > 0 {
+		commands = append(commands, task.VerifierCommands...)
+	} else {
+		commands = determineLikelyCommands(inv)
+	}
 	risks := determineRisks(task, relatedFiles)
 
 	return models.Dossier{

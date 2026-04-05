@@ -45,7 +45,7 @@ func TestArchitectReviewApprove(t *testing.T) {
 		},
 	}
 
-	result, llmCall, err := ArchitectReview(context.Background(), client, "gemini-2.5-flash", input)
+	result, llmCalls, err := ArchitectReview(context.Background(), client, "gemini-2.5-flash", input)
 	if err != nil {
 		t.Fatalf("ArchitectReview() error: %v", err)
 	}
@@ -56,8 +56,11 @@ func TestArchitectReviewApprove(t *testing.T) {
 	if result.Confidence != "high" {
 		t.Errorf("confidence = %q, want high", result.Confidence)
 	}
-	if llmCall.Agent != "architect" {
-		t.Errorf("llm call agent = %q, want architect", llmCall.Agent)
+	if len(llmCalls) != 1 {
+		t.Errorf("llm calls = %d, want 1 (no retry on success)", len(llmCalls))
+	}
+	if len(llmCalls) > 0 && llmCalls[0].Agent != "architect" {
+		t.Errorf("llm call agent = %q, want architect", llmCalls[0].Agent)
 	}
 }
 
