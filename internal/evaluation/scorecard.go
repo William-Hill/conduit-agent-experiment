@@ -47,6 +47,7 @@ func GenerateScorecard(runsDir string) (Scorecard, error) {
 		FailureModes:               make(map[string]int),
 		AcceptanceRateByDifficulty: make(map[string]float64),
 		RejectionRateByFailureMode: make(map[string]float64),
+		AvgQualitativeScores:       make(map[string]float64),
 	}
 
 	entries, err := os.ReadDir(runsDir)
@@ -57,6 +58,8 @@ func GenerateScorecard(runsDir string) (Scorecard, error) {
 	var totalFiles, totalDiff, totalLLM int
 	var lintPassCount, buildPassCount, testsPassCount int
 	runsByDifficulty := make(map[string]int)
+	qualSums := make(map[string]int)
+	qualCounts := make(map[string]int)
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -110,6 +113,28 @@ func GenerateScorecard(runsDir string) (Scorecard, error) {
 		if ev.FailureMode != "" {
 			sc.FailureModes[string(ev.FailureMode)]++
 		}
+
+		qualFields := []struct {
+			name  string
+			value int
+		}{
+			{"architectural_alignment", ev.ArchitecturalAlignment},
+			{"rationale_clarity", ev.RationaleClarity},
+			{"retrieval_usefulness", ev.RetrievalUsefulness},
+			{"reviewer_confidence", ev.ReviewerConfidence},
+			{"patch_readability", ev.PatchReadability},
+		}
+		scoredThisRun := false
+		for _, q := range qualFields {
+			if q.value != 0 {
+				qualSums[q.name] += q.value
+				qualCounts[q.name]++
+				scoredThisRun = true
+			}
+		}
+		if scoredThisRun {
+			sc.QualitativeScoreCount++
+		}
 	}
 
 	if sc.TotalRuns > 0 {
@@ -132,6 +157,12 @@ func GenerateScorecard(runsDir string) (Scorecard, error) {
 	if totalFailed > 0 {
 		for mode, count := range sc.FailureModes {
 			sc.RejectionRateByFailureMode[mode] = float64(count) / float64(totalFailed)
+		}
+	}
+
+	for metric, count := range qualCounts {
+		if count > 0 {
+			sc.AvgQualitativeScores[metric] = float64(qualSums[metric]) / float64(count)
 		}
 	}
 

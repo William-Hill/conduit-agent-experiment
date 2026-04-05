@@ -320,6 +320,133 @@ func TestGenerateScorecard_RejectionRateByFailureMode_NoFailures(t *testing.T) {
 	}
 }
 
+func TestGenerateScorecard_QualitativeScores_None(t *testing.T) {
+	runsDir := t.TempDir()
+
+	writeEvaluation(t, filepath.Join(runsDir, "run-1"), models.Evaluation{
+		RunID:  "run-1",
+		TaskID: "task-1",
+	})
+	writeEvaluation(t, filepath.Join(runsDir, "run-2"), models.Evaluation{
+		RunID:  "run-2",
+		TaskID: "task-2",
+	})
+
+	sc, err := GenerateScorecard(runsDir)
+	if err != nil {
+		t.Fatalf("GenerateScorecard() error: %v", err)
+	}
+
+	if sc.QualitativeScoreCount != 0 {
+		t.Errorf("QualitativeScoreCount = %d, want 0", sc.QualitativeScoreCount)
+	}
+	if len(sc.AvgQualitativeScores) != 0 {
+		t.Errorf("AvgQualitativeScores should be empty, got %v", sc.AvgQualitativeScores)
+	}
+}
+
+func TestGenerateScorecard_QualitativeScores_Partial(t *testing.T) {
+	runsDir := t.TempDir()
+
+	// Run 1: scores architectural_alignment and rationale_clarity only
+	writeEvaluation(t, filepath.Join(runsDir, "run-1"), models.Evaluation{
+		RunID:                  "run-1",
+		TaskID:                 "task-1",
+		ArchitecturalAlignment: 4,
+		RationaleClarity:       3,
+	})
+
+	// Run 2: scores architectural_alignment and patch_readability only
+	writeEvaluation(t, filepath.Join(runsDir, "run-2"), models.Evaluation{
+		RunID:                  "run-2",
+		TaskID:                 "task-2",
+		ArchitecturalAlignment: 5,
+		PatchReadability:       4,
+	})
+
+	// Run 3: scores nothing
+	writeEvaluation(t, filepath.Join(runsDir, "run-3"), models.Evaluation{
+		RunID:  "run-3",
+		TaskID: "task-3",
+	})
+
+	sc, err := GenerateScorecard(runsDir)
+	if err != nil {
+		t.Fatalf("GenerateScorecard() error: %v", err)
+	}
+
+	// 2 runs had at least one qualitative score (runs 1 and 2).
+	if sc.QualitativeScoreCount != 2 {
+		t.Errorf("QualitativeScoreCount = %d, want 2", sc.QualitativeScoreCount)
+	}
+
+	// architectural_alignment: (4+5)/2 = 4.5
+	if got := sc.AvgQualitativeScores["architectural_alignment"]; got != 4.5 {
+		t.Errorf("AvgQualitativeScores[architectural_alignment] = %v, want 4.5", got)
+	}
+	// rationale_clarity: only run 1 scored → 3/1 = 3
+	if got := sc.AvgQualitativeScores["rationale_clarity"]; got != 3.0 {
+		t.Errorf("AvgQualitativeScores[rationale_clarity] = %v, want 3.0", got)
+	}
+	// patch_readability: only run 2 scored → 4/1 = 4
+	if got := sc.AvgQualitativeScores["patch_readability"]; got != 4.0 {
+		t.Errorf("AvgQualitativeScores[patch_readability] = %v, want 4.0", got)
+	}
+	// retrieval_usefulness: no one scored → should be absent from map
+	if _, ok := sc.AvgQualitativeScores["retrieval_usefulness"]; ok {
+		t.Errorf("AvgQualitativeScores should not contain retrieval_usefulness when no run scored it")
+	}
+	// reviewer_confidence: no one scored → should be absent from map
+	if _, ok := sc.AvgQualitativeScores["reviewer_confidence"]; ok {
+		t.Errorf("AvgQualitativeScores should not contain reviewer_confidence when no run scored it")
+	}
+}
+
+func TestGenerateScorecard_QualitativeScores_All(t *testing.T) {
+	runsDir := t.TempDir()
+
+	writeEvaluation(t, filepath.Join(runsDir, "run-a"), models.Evaluation{
+		RunID:                  "run-a",
+		TaskID:                 "task-a",
+		ArchitecturalAlignment: 5,
+		RationaleClarity:       4,
+		RetrievalUsefulness:    3,
+		ReviewerConfidence:     4,
+		PatchReadability:       5,
+	})
+	writeEvaluation(t, filepath.Join(runsDir, "run-b"), models.Evaluation{
+		RunID:                  "run-b",
+		TaskID:                 "task-b",
+		ArchitecturalAlignment: 3,
+		RationaleClarity:       2,
+		RetrievalUsefulness:    5,
+		ReviewerConfidence:     2,
+		PatchReadability:       3,
+	})
+
+	sc, err := GenerateScorecard(runsDir)
+	if err != nil {
+		t.Fatalf("GenerateScorecard() error: %v", err)
+	}
+
+	if sc.QualitativeScoreCount != 2 {
+		t.Errorf("QualitativeScoreCount = %d, want 2", sc.QualitativeScoreCount)
+	}
+
+	expected := map[string]float64{
+		"architectural_alignment": 4.0,
+		"rationale_clarity":       3.0,
+		"retrieval_usefulness":    4.0,
+		"reviewer_confidence":     3.0,
+		"patch_readability":       4.0,
+	}
+	for metric, want := range expected {
+		if got := sc.AvgQualitativeScores[metric]; got != want {
+			t.Errorf("AvgQualitativeScores[%s] = %v, want %v", metric, got, want)
+		}
+	}
+}
+
 func TestFormatScorecard(t *testing.T) {
 	sc := Scorecard{
 		TotalRuns:       2,
