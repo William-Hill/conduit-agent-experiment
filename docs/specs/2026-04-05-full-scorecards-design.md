@@ -44,9 +44,6 @@ LintPassRate  float64 `json:"lint_pass_rate"`
 BuildPassRate float64 `json:"build_pass_rate"`
 TestsPassRate float64 `json:"tests_pass_rate"`
 
-// Iteration proxy (denominator: TotalRuns).
-AvgIterations float64 `json:"avg_iterations"`
-
 // Rate versions of existing count maps (kept alongside, not replacing).
 AcceptanceRateByDifficulty map[string]float64 `json:"acceptance_rate_by_difficulty"`
 RejectionRateByFailureMode map[string]float64 `json:"rejection_rate_by_failure_mode"`
@@ -73,14 +70,6 @@ TestsPassRate = count(runs where TestsPass is true) / TotalRuns
 ```
 
 When `TotalRuns == 0`, all rates are `0.0`.
-
-### Average iterations
-
-```
-AvgIterations = totalLLMCalls / TotalRuns
-```
-
-Uses the existing `totalLLM` counter already accumulated in the loop. No new instrumentation.
 
 ### Acceptance rate by difficulty
 
@@ -123,7 +112,7 @@ If no run scored any qualitative metric at all: `AvgQualitativeScores` is empty 
 
 `FormatScorecard` gains three new sections, appended after the existing Summary / Success by Difficulty / Failure Modes sections. **Sections with empty data are omitted entirely** — matching the pattern the existing `FormatScorecard` already uses for the optional maps.
 
-`AvgIterations` joins the top Summary table as a new row.
+The existing `AvgLLMCalls` field is rendered as "Avg Iterations" in the Summary table (alongside its separate "Avg LLM Calls" row for backwards compatibility).
 
 Example output (all sections populated):
 
@@ -168,7 +157,6 @@ Tests go in the existing `internal/evaluation/scorecard_test.go`, following the 
 New test functions:
 
 - **`TestGenerateScorecard_PassRates`** — fixture with mixed `LintPass`/`BuildPass`/`TestsPass` states across multiple runs; asserts rates computed against `TotalRuns`.
-- **`TestGenerateScorecard_AvgIterations`** — fixture with varying `LLMCalls` counts; asserts average.
 - **`TestGenerateScorecard_AcceptanceRateByDifficulty`** — fixture with multiple difficulties and mixed success; asserts per-difficulty rates including the edge case where a difficulty has zero successes.
 - **`TestGenerateScorecard_RejectionRateByFailureMode`** — fixture with multiple failure modes; asserts rates and the zero-failed-runs edge case (empty map, no NaN).
 - **`TestGenerateScorecard_QualitativeScores`** — three sub-cases:

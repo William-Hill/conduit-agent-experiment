@@ -124,6 +124,9 @@ func GenerateScorecard(runsDir string) (Scorecard, error) {
 		scoredThisRun := false
 		for _, q := range qualFields {
 			if q.value != 0 {
+				if q.value < 1 || q.value > 5 {
+					return sc, fmt.Errorf("qualitative field %s has invalid value %d (must be 0 or 1-5) in %s", q.name, q.value, evalPath)
+				}
 				qualSums[q.name] += q.value
 				qualCounts[q.name]++
 				scoredThisRun = true
@@ -210,7 +213,7 @@ func FormatScorecard(sc Scorecard) string {
 		}
 	}
 
-	if sc.LintPassRate > 0 || sc.BuildPassRate > 0 || sc.TestsPassRate > 0 {
+	if sc.TotalRuns > 0 {
 		sb.WriteString("\n## Pass Rates\n\n")
 		sb.WriteString("| Check | Rate |\n")
 		sb.WriteString("|-------|------|\n")
