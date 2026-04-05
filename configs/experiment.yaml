@@ -2,12 +2,19 @@ target:
   repo_path: "${CONDUIT_REPO_PATH}"
   ref: "main"
 
+github:
+  owner: "ConduitIO"
+  repo: "conduit"
+  fork_owner: "William-Hill"
+  base_branch: "main"
+
 policy:
   max_difficulty: "L2"
   max_blast_radius: "medium"
   allow_push: false
   allow_merge: false
   require_rationale: true
+  max_files_changed: 10
 
 execution:
   use_worktree: true

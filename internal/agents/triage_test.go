@@ -21,7 +21,7 @@ func TestTriageAccept(t *testing.T) {
 	policy := orchestrator.DefaultPhase1Policy()
 
 	decision := agents.Triage(task, dossier, policy)
-	if decision.Decision != "accept" {
+	if decision.Decision != agents.DecisionAccept {
 		t.Errorf("decision = %q, want accept", decision.Decision)
 	}
 }
@@ -36,7 +36,7 @@ func TestTriageRejectDifficulty(t *testing.T) {
 	policy := orchestrator.DefaultPhase1Policy()
 
 	decision := agents.Triage(task, dossier, policy)
-	if decision.Decision != "reject" {
+	if decision.Decision != agents.DecisionReject {
 		t.Errorf("decision = %q, want reject", decision.Decision)
 	}
 }
@@ -51,7 +51,7 @@ func TestTriageRejectBlastRadius(t *testing.T) {
 	policy := orchestrator.DefaultPhase1Policy()
 
 	decision := agents.Triage(task, dossier, policy)
-	if decision.Decision != "reject" {
+	if decision.Decision != agents.DecisionReject {
 		t.Errorf("decision = %q, want reject", decision.Decision)
 	}
 }
@@ -70,7 +70,7 @@ func TestTriageDefer(t *testing.T) {
 	policy := orchestrator.DefaultPhase1Policy()
 
 	decision := agents.Triage(task, dossier, policy)
-	if decision.Decision != "defer" {
+	if decision.Decision != agents.DecisionDefer {
 		t.Errorf("decision = %q, want defer", decision.Decision)
 	}
 }

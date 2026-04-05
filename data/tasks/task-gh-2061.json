@@ -1,0 +1,16 @@
+{
+  "id": "task-gh-2061",
+  "title": "Fix pipeline status stopped in config file still running on restart",
+  "source": "github#2061",
+  "description": "A pipeline declared with status: stopped in a YAML config file still starts running on conduit run when it was previously running. The provisioner reads the stored runtime state instead of the file-declared status on restart.",
+  "labels": ["bug"],
+  "difficulty": "L2",
+  "blast_radius": "medium",
+  "acceptance_criteria": [
+    "Pipeline with status: stopped in config does not start on restart",
+    "Pipeline with status: running in config continues to start normally",
+    "State reconciliation prefers file-declared status over stored runtime state"
+  ],
+  "issue_number": 2061,
+  "status": "pending"
+}

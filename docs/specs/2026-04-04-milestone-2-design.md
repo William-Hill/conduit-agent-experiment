@@ -19,7 +19,7 @@ Extend the Milestone 1 pipeline with three new agents (Implementer, Architect, T
 - Automatic retry loops (Architect says "revise" -> run stops)
 - PM-like agent with competitive analysis, security advisory scanning, feature prioritization
 - Auto-merge or any non-draft PR actions
-- Aggregate scorecard reporting (Milestone 3)
+- Full aggregate scorecard with historical trends (Milestone 3 — light version included in M2)
 - Human review time tracking automation (manual JSON in M2)
 
 ## Architecture

@@ -11,9 +11,17 @@ import (
 // Config holds all experiment configuration.
 type Config struct {
 	Target    TargetConfig    `mapstructure:"target"`
+	GitHub    GitHubConfig    `mapstructure:"github"`
 	Policy    PolicyConfig    `mapstructure:"policy"`
 	Execution ExecutionConfig `mapstructure:"execution"`
 	Reporting ReportingConfig `mapstructure:"reporting"`
+}
+
+type GitHubConfig struct {
+	Owner      string `mapstructure:"owner"`
+	Repo       string `mapstructure:"repo"`
+	ForkOwner  string `mapstructure:"fork_owner"`
+	BaseBranch string `mapstructure:"base_branch"`
 }
 
 type TargetConfig struct {
@@ -27,6 +35,7 @@ type PolicyConfig struct {
 	AllowPush        bool   `mapstructure:"allow_push"`
 	AllowMerge       bool   `mapstructure:"allow_merge"`
 	RequireRationale bool   `mapstructure:"require_rationale"`
+	MaxFilesChanged  int    `mapstructure:"max_files_changed"`
 }
 
 type ExecutionConfig struct {
@@ -73,6 +82,14 @@ type ProviderConfig struct {
 
 type RoleConfig struct {
 	Model string `mapstructure:"model"`
+}
+
+// ModelForRole returns the configured model for a role, or fallback if not set.
+func (m ModelsConfig) ModelForRole(role, fallback string) string {
+	if rc, ok := m.Roles[role]; ok && rc.Model != "" {
+		return rc.Model
+	}
+	return fallback
 }
 
 func LoadModels(path string) (ModelsConfig, error) {

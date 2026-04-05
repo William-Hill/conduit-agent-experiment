@@ -73,7 +73,7 @@ func TestEndToEnd(t *testing.T) {
 		Status:      models.TaskStatusPending,
 	}
 
-	result, err := orchestrator.RunWorkflow(context.Background(), task, cfg, mcfg)
+	result, err := orchestrator.RunWorkflow(context.Background(), task, cfg, mcfg, nil)
 	if err != nil {
 		t.Fatalf("RunWorkflow() error: %v", err)
 	}

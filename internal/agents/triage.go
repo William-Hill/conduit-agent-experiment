@@ -4,6 +4,12 @@ import (
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/models"
 )
 
+const (
+	DecisionAccept = "accept"
+	DecisionReject = "reject"
+	DecisionDefer  = "defer"
+)
+
 // PolicyChecker is satisfied by any type that can validate a task against a policy.
 type PolicyChecker interface {
 	CheckTask(models.Task) error
@@ -19,20 +25,20 @@ type TriageDecision struct {
 func Triage(task models.Task, dossier models.Dossier, policy PolicyChecker) TriageDecision {
 	if err := policy.CheckTask(task); err != nil {
 		return TriageDecision{
-			Decision: "reject",
+			Decision: DecisionReject,
 			Reason:   err.Error(),
 		}
 	}
 
 	if len(dossier.RelatedFiles) == 0 && len(dossier.RelatedDocs) == 0 && len(dossier.OpenQuestions) > 0 {
 		return TriageDecision{
-			Decision: "defer",
+			Decision: DecisionDefer,
 			Reason:   "no related files found and open questions remain",
 		}
 	}
 
 	return TriageDecision{
-		Decision: "accept",
+		Decision: DecisionAccept,
 		Reason:   "task within policy limits and dossier has relevant context",
 	}
 }

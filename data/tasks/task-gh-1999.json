@@ -1,0 +1,16 @@
+{
+  "id": "task-gh-1999",
+  "title": "Fix LifecycleOnCreated backwards compatibility for old connectors",
+  "source": "github#1999",
+  "description": "Old connectors that don't implement LifecycleOnCreated fail hard instead of gracefully falling back. The gRPC call returns 'unknown method' and kills the pipeline instead of being a no-op. The fix is to catch the unknown method error and treat it as a no-op.",
+  "labels": ["bug"],
+  "difficulty": "L2",
+  "blast_radius": "medium",
+  "acceptance_criteria": [
+    "Connectors without LifecycleOnCreated do not crash the pipeline",
+    "Unknown method errors from lifecycle calls are treated as no-ops",
+    "Connectors that do implement lifecycle methods still work correctly"
+  ],
+  "issue_number": 1999,
+  "status": "pending"
+}
