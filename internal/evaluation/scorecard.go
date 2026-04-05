@@ -53,6 +53,7 @@ func GenerateScorecard(runsDir string) (Scorecard, error) {
 	}
 
 	var totalFiles, totalDiff, totalLLM int
+	var lintPassCount, buildPassCount, testsPassCount int
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -78,6 +79,16 @@ func GenerateScorecard(runsDir string) (Scorecard, error) {
 		totalDiff += ev.DiffLines
 		totalLLM += ev.LLMCalls
 
+		if ev.LintPass {
+			lintPassCount++
+		}
+		if ev.BuildPass {
+			buildPassCount++
+		}
+		if ev.TestsPass {
+			testsPassCount++
+		}
+
 		if ev.ImplementerSuccess && ev.VerifierPass && ev.ArchitectDecision == "approve" {
 			sc.SuccessfulRuns++
 			if ev.Difficulty != "" {
@@ -98,6 +109,9 @@ func GenerateScorecard(runsDir string) (Scorecard, error) {
 		sc.AvgFilesChanged = float64(totalFiles) / float64(sc.TotalRuns)
 		sc.AvgDiffLines = float64(totalDiff) / float64(sc.TotalRuns)
 		sc.AvgLLMCalls = float64(totalLLM) / float64(sc.TotalRuns)
+		sc.LintPassRate = float64(lintPassCount) / float64(sc.TotalRuns)
+		sc.BuildPassRate = float64(buildPassCount) / float64(sc.TotalRuns)
+		sc.TestsPassRate = float64(testsPassCount) / float64(sc.TotalRuns)
 	}
 
 	return sc, nil

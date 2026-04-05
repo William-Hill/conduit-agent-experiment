@@ -111,6 +111,57 @@ func TestGenerateScorecard_EmptyDir(t *testing.T) {
 	}
 }
 
+func TestGenerateScorecard_PassRates(t *testing.T) {
+	runsDir := t.TempDir()
+
+	// Run 1: lint + build + tests all pass
+	writeEvaluation(t, filepath.Join(runsDir, "run-a"), models.Evaluation{
+		RunID:     "run-a",
+		TaskID:    "task-a",
+		LintPass:  true,
+		BuildPass: true,
+		TestsPass: true,
+	})
+
+	// Run 2: only build passes
+	writeEvaluation(t, filepath.Join(runsDir, "run-b"), models.Evaluation{
+		RunID:     "run-b",
+		TaskID:    "task-b",
+		LintPass:  false,
+		BuildPass: true,
+		TestsPass: false,
+	})
+
+	// Run 3: nothing passes
+	writeEvaluation(t, filepath.Join(runsDir, "run-c"), models.Evaluation{
+		RunID:     "run-c",
+		TaskID:    "task-c",
+		LintPass:  false,
+		BuildPass: false,
+		TestsPass: false,
+	})
+
+	sc, err := GenerateScorecard(runsDir)
+	if err != nil {
+		t.Fatalf("GenerateScorecard() error: %v", err)
+	}
+
+	// Denominator is TotalRuns = 3.
+	wantLint := 1.0 / 3.0
+	wantBuild := 2.0 / 3.0
+	wantTests := 1.0 / 3.0
+
+	if sc.LintPassRate != wantLint {
+		t.Errorf("LintPassRate = %v, want %v", sc.LintPassRate, wantLint)
+	}
+	if sc.BuildPassRate != wantBuild {
+		t.Errorf("BuildPassRate = %v, want %v", sc.BuildPassRate, wantBuild)
+	}
+	if sc.TestsPassRate != wantTests {
+		t.Errorf("TestsPassRate = %v, want %v", sc.TestsPassRate, wantTests)
+	}
+}
+
 func TestFormatScorecard(t *testing.T) {
 	sc := Scorecard{
 		TotalRuns:       2,
