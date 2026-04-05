@@ -109,6 +109,7 @@ func GenerateScorecard(runsDir string) (Scorecard, error) {
 		sc.AvgFilesChanged = float64(totalFiles) / float64(sc.TotalRuns)
 		sc.AvgDiffLines = float64(totalDiff) / float64(sc.TotalRuns)
 		sc.AvgLLMCalls = float64(totalLLM) / float64(sc.TotalRuns)
+		sc.AvgIterations = float64(totalLLM) / float64(sc.TotalRuns)
 		sc.LintPassRate = float64(lintPassCount) / float64(sc.TotalRuns)
 		sc.BuildPassRate = float64(buildPassCount) / float64(sc.TotalRuns)
 		sc.TestsPassRate = float64(testsPassCount) / float64(sc.TotalRuns)

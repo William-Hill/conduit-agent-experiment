@@ -162,6 +162,36 @@ func TestGenerateScorecard_PassRates(t *testing.T) {
 	}
 }
 
+func TestGenerateScorecard_AvgIterations(t *testing.T) {
+	runsDir := t.TempDir()
+
+	writeEvaluation(t, filepath.Join(runsDir, "run-1"), models.Evaluation{
+		RunID:    "run-1",
+		TaskID:   "task-1",
+		LLMCalls: 4,
+	})
+	writeEvaluation(t, filepath.Join(runsDir, "run-2"), models.Evaluation{
+		RunID:    "run-2",
+		TaskID:   "task-2",
+		LLMCalls: 10,
+	})
+	writeEvaluation(t, filepath.Join(runsDir, "run-3"), models.Evaluation{
+		RunID:    "run-3",
+		TaskID:   "task-3",
+		LLMCalls: 7,
+	})
+
+	sc, err := GenerateScorecard(runsDir)
+	if err != nil {
+		t.Fatalf("GenerateScorecard() error: %v", err)
+	}
+
+	wantAvg := (4.0 + 10.0 + 7.0) / 3.0
+	if sc.AvgIterations != wantAvg {
+		t.Errorf("AvgIterations = %v, want %v", sc.AvgIterations, wantAvg)
+	}
+}
+
 func TestFormatScorecard(t *testing.T) {
 	sc := Scorecard{
 		TotalRuns:       2,
