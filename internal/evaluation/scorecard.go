@@ -184,6 +184,7 @@ func FormatScorecard(sc Scorecard) string {
 	sb.WriteString(fmt.Sprintf("| Avg Files Changed | %.2f |\n", sc.AvgFilesChanged))
 	sb.WriteString(fmt.Sprintf("| Avg Diff Lines | %.2f |\n", sc.AvgDiffLines))
 	sb.WriteString(fmt.Sprintf("| Avg LLM Calls | %.2f |\n", sc.AvgLLMCalls))
+	sb.WriteString(fmt.Sprintf("| Avg Iterations | %.2f |\n", sc.AvgIterations))
 
 	if len(sc.SuccessByDifficulty) > 0 {
 		sb.WriteString("\n## Success by Difficulty\n\n")
@@ -212,6 +213,63 @@ func FormatScorecard(sc Scorecard) string {
 		sort.Strings(keys)
 		for _, k := range keys {
 			sb.WriteString(fmt.Sprintf("| %s | %d |\n", k, sc.FailureModes[k]))
+		}
+	}
+
+	if sc.LintPassRate > 0 || sc.BuildPassRate > 0 || sc.TestsPassRate > 0 {
+		sb.WriteString("\n## Pass Rates\n\n")
+		sb.WriteString("| Check | Rate |\n")
+		sb.WriteString("|-------|------|\n")
+		sb.WriteString(fmt.Sprintf("| Lint  | %.2f |\n", sc.LintPassRate))
+		sb.WriteString(fmt.Sprintf("| Build | %.2f |\n", sc.BuildPassRate))
+		sb.WriteString(fmt.Sprintf("| Tests | %.2f |\n", sc.TestsPassRate))
+	}
+
+	if len(sc.AcceptanceRateByDifficulty) > 0 || len(sc.RejectionRateByFailureMode) > 0 {
+		sb.WriteString("\n## Acceptance & Rejection Rates\n\n")
+
+		if len(sc.AcceptanceRateByDifficulty) > 0 {
+			sb.WriteString("| Difficulty | Acceptance Rate |\n")
+			sb.WriteString("|------------|-----------------|\n")
+			keys := make([]string, 0, len(sc.AcceptanceRateByDifficulty))
+			for k := range sc.AcceptanceRateByDifficulty {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				sb.WriteString(fmt.Sprintf("| %s | %.2f |\n", k, sc.AcceptanceRateByDifficulty[k]))
+			}
+		}
+
+		if len(sc.RejectionRateByFailureMode) > 0 {
+			if len(sc.AcceptanceRateByDifficulty) > 0 {
+				sb.WriteString("\n")
+			}
+			sb.WriteString("| Failure Mode | Rejection Rate |\n")
+			sb.WriteString("|--------------|----------------|\n")
+			keys := make([]string, 0, len(sc.RejectionRateByFailureMode))
+			for k := range sc.RejectionRateByFailureMode {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				sb.WriteString(fmt.Sprintf("| %s | %.2f |\n", k, sc.RejectionRateByFailureMode[k]))
+			}
+		}
+	}
+
+	if sc.QualitativeScoreCount > 0 && len(sc.AvgQualitativeScores) > 0 {
+		sb.WriteString("\n## Qualitative Scores\n\n")
+		sb.WriteString(fmt.Sprintf("(Scored runs: %d)\n\n", sc.QualitativeScoreCount))
+		sb.WriteString("| Metric | Avg (1-5) |\n")
+		sb.WriteString("|--------|-----------|\n")
+		keys := make([]string, 0, len(sc.AvgQualitativeScores))
+		for k := range sc.AvgQualitativeScores {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			sb.WriteString(fmt.Sprintf("| %s | %.1f |\n", k, sc.AvgQualitativeScores[k]))
 		}
 	}
 

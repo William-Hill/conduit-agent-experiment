@@ -483,3 +483,71 @@ func TestFormatScorecard(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatScorecard_NewSections_Populated(t *testing.T) {
+	sc := Scorecard{
+		TotalRuns:       3,
+		SuccessfulRuns:  2,
+		AvgIterations:   7.5,
+		LintPassRate:    0.67,
+		BuildPassRate:   1.0,
+		TestsPassRate:   0.33,
+		AcceptanceRateByDifficulty: map[string]float64{
+			"L1": 1.0,
+			"L2": 0.5,
+		},
+		RejectionRateByFailureMode: map[string]float64{
+			string(models.FailureHallucination): 1.0,
+		},
+		QualitativeScoreCount: 2,
+		AvgQualitativeScores: map[string]float64{
+			"architectural_alignment": 4.5,
+			"rationale_clarity":       3.0,
+		},
+	}
+
+	out := FormatScorecard(sc)
+
+	checks := []string{
+		"Avg Iterations",      // summary row for AvgIterations
+		"Pass Rates",          // section header
+		"Lint",
+		"Build",
+		"Tests",
+		"Acceptance & Rejection Rates", // section header
+		"Acceptance Rate",
+		"Rejection Rate",
+		"Qualitative Scores",           // section header
+		"Scored runs: 2",
+		"architectural_alignment",
+		"rationale_clarity",
+	}
+	for _, want := range checks {
+		if !strings.Contains(out, want) {
+			t.Errorf("FormatScorecard output missing %q", want)
+		}
+	}
+}
+
+func TestFormatScorecard_NewSections_Omitted(t *testing.T) {
+	// Scorecard with no new metrics populated — new sections should be absent.
+	sc := Scorecard{
+		TotalRuns:      1,
+		SuccessfulRuns: 1,
+	}
+
+	out := FormatScorecard(sc)
+
+	// Qualitative Scores section should not render at all when QualitativeScoreCount == 0.
+	if strings.Contains(out, "Qualitative Scores") {
+		t.Error("FormatScorecard should not render Qualitative Scores section when no runs scored")
+	}
+	// Pass Rates section also should not render when LintPassRate/BuildPassRate/TestsPassRate all 0.
+	if strings.Contains(out, "Pass Rates") {
+		t.Error("FormatScorecard should not render Pass Rates section when all pass rates are 0")
+	}
+	// Acceptance & Rejection Rates section should not render when both maps are empty.
+	if strings.Contains(out, "Acceptance & Rejection Rates") {
+		t.Error("FormatScorecard should not render Acceptance & Rejection Rates section when both rate maps are empty")
+	}
+}
