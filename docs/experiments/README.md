@@ -62,6 +62,7 @@ Observations that don't fit the existing taxonomy are flagged explicitly as cand
 |---|------|------|------------|-------------|-------------|----------|-------------|
 | 01 | 2026-04-05 | task-001: Docs drift in pipeline config example | L1 | low | failed | 116s | Tool produced credible patch; failure was environmental, not agent-caused. Architect provided useful review even under corrupted verifier signal. |
 | 02 | 2026-04-05 | task-gh-576: HTTP status codes for validation errors | L1 | low | failed | 182s | Agent's architectural intent was correct; build failed due to cross-file naming inconsistency in generated code. Architect caught both the build failure and a deeper semantic flaw. |
+| 03 | 2026-04-05 | task-gh-645: Automate version constant update in built-in connectors | L1 | low | failed | 95s | Most focused run (2 files, 5 LLM calls). Architect caught a force-push anti-pattern in the CI workflow. Verifier provided zero signal on the non-Go deliverable. Primary artifact (script) lost due to git diff limitation. |
 
 ## How to Read an Entry
 
