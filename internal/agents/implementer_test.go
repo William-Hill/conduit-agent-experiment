@@ -44,11 +44,14 @@ func TestCreatePatchPlan(t *testing.T) {
 		"internal/config/config.go": "package config\n\ntype Config struct{}\n",
 	}
 
-	plan, llmCall, err := CreatePatchPlan(context.Background(), client, "gemini-2.5-flash", task, dossier, fileContents)
+	plan, llmCalls, err := CreatePatchPlan(context.Background(), client, "gemini-2.5-flash", task, dossier, fileContents)
 	if err != nil {
 		t.Fatalf("CreatePatchPlan() error: %v", err)
 	}
 
+	if len(llmCalls) != 1 {
+		t.Errorf("llm calls = %d, want 1 (no retry on success)", len(llmCalls))
+	}
 	if plan.PlanSummary != "Update the config file to add the missing field." {
 		t.Errorf("plan_summary = %q, want expected summary", plan.PlanSummary)
 	}
@@ -76,8 +79,8 @@ func TestCreatePatchPlan(t *testing.T) {
 	if plan.TotalFiles() != 2 {
 		t.Errorf("TotalFiles() = %d, want 2", plan.TotalFiles())
 	}
-	if llmCall.Agent != "implementer" {
-		t.Errorf("llm call agent = %q, want implementer", llmCall.Agent)
+	if len(llmCalls) > 0 && llmCalls[0].Agent != "implementer" {
+		t.Errorf("llm call agent = %q, want implementer", llmCalls[0].Agent)
 	}
 }
 

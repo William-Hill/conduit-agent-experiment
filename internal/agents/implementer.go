@@ -55,22 +55,36 @@ func (p PatchPlan) TotalFiles() int {
 }
 
 // CreatePatchPlan asks the LLM to produce a structured patch plan for a task.
-func CreatePatchPlan(ctx context.Context, client *llm.Client, modelName string, task models.Task, dossier models.Dossier, fileContents map[string]string) (PatchPlan, models.LLMCall, error) {
+func CreatePatchPlan(ctx context.Context, client *llm.Client, modelName string, task models.Task, dossier models.Dossier, fileContents map[string]string) (PatchPlan, []models.LLMCall, error) {
 	userPrompt := buildImplementerPrompt(task, dossier, fileContents)
 
 	response, call, err := callLLM(ctx, client, "implementer", modelName, implementerSystemPrompt, userPrompt)
+	calls := []models.LLMCall{call}
 	if err != nil {
-		return PatchPlan{}, call, fmt.Errorf("implementer LLM call failed: %w", err)
+		return PatchPlan{}, calls, fmt.Errorf("implementer LLM call failed: %w", err)
 	}
 
 	cleaned := cleanJSONResponse(response)
 
 	var plan PatchPlan
-	if err := json.Unmarshal([]byte(cleaned), &plan); err != nil {
-		return PatchPlan{}, call, fmt.Errorf("implementer response not valid JSON: %w", err)
+	if err := json.Unmarshal([]byte(cleaned), &plan); err == nil {
+		return plan, calls, nil
+	} else {
+		retryPrompt := fmt.Sprintf(
+			"%s\n\n---\nYour previous response was not valid JSON. Parser error: %s\nReturn ONLY a valid JSON object matching the schema. Do not include markdown fences, code blocks, or any text outside the JSON.",
+			userPrompt, err.Error(),
+		)
+		response2, call2, retryErr := callLLM(ctx, client, "implementer-retry", modelName, implementerSystemPrompt, retryPrompt)
+		calls = append(calls, call2)
+		if retryErr != nil {
+			return PatchPlan{}, calls, fmt.Errorf("implementer retry LLM call failed: %w", retryErr)
+		}
+		cleaned2 := cleanJSONResponse(response2)
+		if err2 := json.Unmarshal([]byte(cleaned2), &plan); err2 != nil {
+			return PatchPlan{}, calls, fmt.Errorf("implementer response not valid JSON after retry: %w", err2)
+		}
+		return plan, calls, nil
 	}
-
-	return plan, call, nil
 }
 
 // GenerateFileContent asks the LLM to produce the full content for a single file.

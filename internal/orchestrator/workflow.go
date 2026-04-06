@@ -152,11 +152,11 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 	topFiles := dossier.RelatedFiles[:topN]
 	fileContents := agents.ReadFileContents(runner.WorkDir, topFiles, 32*1024)
 
-	plan, planCall, err := agents.CreatePatchPlan(ctx, implClient, implModel, task, dossier, fileContents)
+	plan, planCalls, err := agents.CreatePatchPlan(ctx, implClient, implModel, task, dossier, fileContents)
+	llmCalls = append(llmCalls, planCalls...)
 	if err != nil {
 		return nil, fmt.Errorf("implementer plan: %w", err)
 	}
-	llmCalls = append(llmCalls, planCall)
 	agentsInvoked = append(agentsInvoked, "implementer")
 
 	if err := policy.CheckPatchBreadth(plan.TotalFiles()); err != nil {
