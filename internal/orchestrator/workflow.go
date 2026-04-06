@@ -196,7 +196,7 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 			}
 		}
 
-		newContent, genCall, err := agents.GenerateFileContent(ctx, implClient, implModel, plan, task, fc.Path, currentContent, generatedSiblings)
+		newContent, genCall, err := agents.GenerateFileContent(ctx, implClient, implModel, plan, task, fc.Path, currentContent, generatedSiblings, dossier.PackageInventory)
 		if err != nil {
 			log.Printf("implementer: generation failed for %s: %v — marking as failed, continuing", fc.Path, err)
 			failedFiles = append(failedFiles, fc.Path)
@@ -222,7 +222,7 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 			continue
 		}
 
-		newContent, genCall, err := agents.GenerateFileContent(ctx, implClient, implModel, plan, task, fc.Path, "", generatedSiblings)
+		newContent, genCall, err := agents.GenerateFileContent(ctx, implClient, implModel, plan, task, fc.Path, "", generatedSiblings, dossier.PackageInventory)
 		if err != nil {
 			log.Printf("implementer: generation failed for %s: %v — marking as failed, continuing", fc.Path, err)
 			failedFiles = append(failedFiles, fc.Path)
@@ -352,7 +352,7 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 			if readErr == nil {
 				currentContent = string(data)
 			}
-			newContent, genCall, genErr := agents.ReviseFileContent(ctx, implClient, implModel, plan, task, fc.Path, currentContent, revisedSiblings, feedback)
+			newContent, genCall, genErr := agents.ReviseFileContent(ctx, implClient, implModel, plan, task, fc.Path, currentContent, revisedSiblings, feedback, dossier.PackageInventory)
 			if genErr != nil {
 				log.Printf("revision failed for %s: %v", fc.Path, genErr)
 				continue
@@ -371,7 +371,7 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 			if readErr == nil {
 				currentContent = string(data)
 			}
-			newContent, genCall, genErr := agents.ReviseFileContent(ctx, implClient, implModel, plan, task, fc.Path, currentContent, revisedSiblings, feedback)
+			newContent, genCall, genErr := agents.ReviseFileContent(ctx, implClient, implModel, plan, task, fc.Path, currentContent, revisedSiblings, feedback, dossier.PackageInventory)
 			if genErr != nil {
 				log.Printf("revision failed for %s: %v", fc.Path, genErr)
 				continue

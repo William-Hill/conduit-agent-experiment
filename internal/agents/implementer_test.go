@@ -121,7 +121,7 @@ type Config struct {
 	}
 	currentContent := "package config\n\ntype Config struct{}\n"
 
-	content, llmCall, err := GenerateFileContent(context.Background(), client, "gemini-2.5-flash", plan, task, "internal/config/config.go", currentContent, map[string]string{})
+	content, llmCall, err := GenerateFileContent(context.Background(), client, "gemini-2.5-flash", plan, task, "internal/config/config.go", currentContent, map[string]string{}, nil)
 	if err != nil {
 		t.Fatalf("GenerateFileContent() error: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestGenerateFileContentStripsMarkdownFences(t *testing.T) {
 	plan := PatchPlan{PlanSummary: "some plan"}
 	task := models.Task{ID: "task-001", Title: "test"}
 
-	content, _, err := GenerateFileContent(context.Background(), client, "gemini-2.5-flash", plan, task, "internal/config/config.go", "", map[string]string{})
+	content, _, err := GenerateFileContent(context.Background(), client, "gemini-2.5-flash", plan, task, "internal/config/config.go", "", map[string]string{}, nil)
 	if err != nil {
 		t.Fatalf("GenerateFileContent() error: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestBuildFileContentPromptWithSiblings(t *testing.T) {
 	siblings := map[string]string{
 		"pkg/errors.go": "package pkg\n\nvar ErrFoo = errors.New(\"foo\")\n",
 	}
-	prompt := buildFileContentPrompt(plan, task, "pkg/handler.go", "package pkg", siblings)
+	prompt := buildFileContentPrompt(plan, task, "pkg/handler.go", "package pkg", siblings, nil)
 	if !strings.Contains(prompt, "Already Generated Files") {
 		t.Error("prompt should contain sibling section")
 	}
@@ -175,7 +175,7 @@ func TestBuildFileContentPromptWithSiblings(t *testing.T) {
 func TestBuildFileContentPromptNoSiblings(t *testing.T) {
 	plan := PatchPlan{PlanSummary: "Simple change"}
 	task := models.Task{ID: "test", Title: "test task", Description: "test"}
-	prompt := buildFileContentPrompt(plan, task, "pkg/foo.go", "package pkg", nil)
+	prompt := buildFileContentPrompt(plan, task, "pkg/foo.go", "package pkg", nil, nil)
 	if strings.Contains(prompt, "Already Generated Files") {
 		t.Error("prompt should NOT contain sibling section when empty")
 	}
@@ -190,7 +190,7 @@ func TestReviseFileContent(t *testing.T) {
 	plan := PatchPlan{PlanSummary: "Fix naming"}
 	task := models.Task{ID: "test", Title: "test", Description: "test"}
 
-	content, call, err := ReviseFileContent(context.Background(), client, "test-model", plan, task, "main.go", "package main", map[string]string{}, "Please use consistent naming")
+	content, call, err := ReviseFileContent(context.Background(), client, "test-model", plan, task, "main.go", "package main", map[string]string{}, "Please use consistent naming", nil)
 	if err != nil {
 		t.Fatalf("ReviseFileContent error: %v", err)
 	}
@@ -199,6 +199,38 @@ func TestReviseFileContent(t *testing.T) {
 	}
 	if call.Agent != "implementer-revise" {
 		t.Errorf("call agent = %q, want implementer-revise", call.Agent)
+	}
+}
+
+func TestBuildFileContentPromptWithInventory(t *testing.T) {
+	plan := PatchPlan{PlanSummary: "Fix error handling"}
+	task := models.Task{ID: "test", Title: "test task", Description: "test"}
+	inventory := map[string][]string{
+		"pkg/foundation/cerrors": {"ErrNotImpl", "ErrEmptyID"},
+		"pkg/connector":         {"ErrInvalidConnectorType", "ErrConnectorRunning"},
+		"pkg/http/api/status":   {},
+	}
+	prompt := buildFileContentPrompt(plan, task, "pkg/handler.go", "package handler", nil, inventory)
+	if !strings.Contains(prompt, "Available Packages and Error Sentinels") {
+		t.Error("prompt should contain inventory section")
+	}
+	if !strings.Contains(prompt, "pkg/foundation/cerrors") {
+		t.Error("prompt should contain cerrors package path")
+	}
+	if !strings.Contains(prompt, "ErrNotImpl") {
+		t.Error("prompt should contain ErrNotImpl sentinel")
+	}
+	if !strings.Contains(prompt, "Only import packages listed below") {
+		t.Error("prompt should contain import restriction instruction")
+	}
+}
+
+func TestBuildFileContentPromptNoInventory(t *testing.T) {
+	plan := PatchPlan{PlanSummary: "Simple change"}
+	task := models.Task{ID: "test", Title: "test task", Description: "test"}
+	prompt := buildFileContentPrompt(plan, task, "pkg/foo.go", "package foo", nil, nil)
+	if strings.Contains(prompt, "Available Packages") {
+		t.Error("prompt should NOT contain inventory section when nil")
 	}
 }
 

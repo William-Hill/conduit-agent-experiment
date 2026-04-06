@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/llm"
@@ -73,10 +74,10 @@ func CreatePatchPlan(ctx context.Context, client *llm.Client, modelName string, 
 }
 
 // GenerateFileContent asks the LLM to produce the full content for a single file.
-func GenerateFileContent(ctx context.Context, client *llm.Client, modelName string, plan PatchPlan, task models.Task, filePath, currentContent string, siblingContents map[string]string) (string, models.LLMCall, error) {
+func GenerateFileContent(ctx context.Context, client *llm.Client, modelName string, plan PatchPlan, task models.Task, filePath, currentContent string, siblingContents map[string]string, packageInventory map[string][]string) (string, models.LLMCall, error) {
 	systemPrompt := "You are an expert software engineer. Generate the complete, production-ready file content as requested. Return ONLY the file content — no explanations, no markdown fences."
 
-	userPrompt := buildFileContentPrompt(plan, task, filePath, currentContent, siblingContents)
+	userPrompt := buildFileContentPrompt(plan, task, filePath, currentContent, siblingContents, packageInventory)
 
 	response, call, err := callLLM(ctx, client, "implementer", modelName, systemPrompt, userPrompt)
 	if err != nil {
@@ -102,10 +103,10 @@ func GenerateFileContent(ctx context.Context, client *llm.Client, modelName stri
 
 // ReviseFileContent asks the LLM to re-generate file content incorporating
 // architect feedback from a prior review round.
-func ReviseFileContent(ctx context.Context, client *llm.Client, modelName string, plan PatchPlan, task models.Task, filePath, currentContent string, siblingContents map[string]string, architectFeedback string) (string, models.LLMCall, error) {
+func ReviseFileContent(ctx context.Context, client *llm.Client, modelName string, plan PatchPlan, task models.Task, filePath, currentContent string, siblingContents map[string]string, architectFeedback string, packageInventory map[string][]string) (string, models.LLMCall, error) {
 	systemPrompt := "You are an expert software engineer. Revise the file content based on architect feedback. Return ONLY the complete file content — no explanations, no markdown fences."
 
-	userPrompt := buildFileContentPrompt(plan, task, filePath, currentContent, siblingContents)
+	userPrompt := buildFileContentPrompt(plan, task, filePath, currentContent, siblingContents, packageInventory)
 	userPrompt += fmt.Sprintf("\n\n## Architect Revision Feedback\nThe architect reviewed the previous version and requested revisions:\n\n%s\n\nIncorporate this feedback. Return ONLY the complete revised file content.", architectFeedback)
 
 	response, call, err := callLLM(ctx, client, "implementer-revise", modelName, systemPrompt, userPrompt)
@@ -176,7 +177,7 @@ func buildImplementerPrompt(task models.Task, dossier models.Dossier, fileConten
 	return b.String()
 }
 
-func buildFileContentPrompt(plan PatchPlan, task models.Task, filePath, currentContent string, siblingContents map[string]string) string {
+func buildFileContentPrompt(plan PatchPlan, task models.Task, filePath, currentContent string, siblingContents map[string]string, packageInventory map[string][]string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "## Task\n%s\n\n", task.Title)
 	fmt.Fprintf(&b, "## Plan Summary\n%s\n\n", plan.PlanSummary)
@@ -193,6 +194,26 @@ func buildFileContentPrompt(plan PatchPlan, task models.Task, filePath, currentC
 			}
 			fmt.Fprintf(&b, "### %s\n```\n%s\n```\n\n", path, content)
 		}
+	}
+
+	// Package inventory for import validation.
+	if len(packageInventory) > 0 {
+		fmt.Fprintf(&b, "## Available Packages and Error Sentinels\n")
+		fmt.Fprintf(&b, "IMPORTANT: Only import packages listed below. Do not invent package paths or error constant names.\n\n")
+		dirs := make([]string, 0, len(packageInventory))
+		for dir := range packageInventory {
+			dirs = append(dirs, dir)
+		}
+		sort.Strings(dirs)
+		for _, dir := range dirs {
+			sentinels := packageInventory[dir]
+			if len(sentinels) > 0 {
+				fmt.Fprintf(&b, "%s: %s\n", dir, strings.Join(sentinels, ", "))
+			} else {
+				fmt.Fprintf(&b, "%s: (no error sentinels)\n", dir)
+			}
+		}
+		fmt.Fprintf(&b, "\n")
 	}
 
 	fmt.Fprintf(&b, "## File to Generate\n%s\n\n", filePath)

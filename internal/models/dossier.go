@@ -10,4 +10,7 @@ type Dossier struct {
 	LikelyCommands []string `json:"likely_commands"`
 	Risks         []string `json:"risks"`
 	OpenQuestions []string `json:"open_questions"`
+	// PackageInventory maps directory paths to exported error sentinel names.
+	// Used by the implementer to know which packages and error constants exist.
+	PackageInventory map[string][]string `json:"package_inventory,omitempty"`
 }
