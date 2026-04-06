@@ -100,6 +100,35 @@ func GenerateFileContent(ctx context.Context, client *llm.Client, modelName stri
 	return content, call, nil
 }
 
+// ReviseFileContent asks the LLM to re-generate file content incorporating
+// architect feedback from a prior review round.
+func ReviseFileContent(ctx context.Context, client *llm.Client, modelName string, plan PatchPlan, task models.Task, filePath, currentContent string, siblingContents map[string]string, architectFeedback string) (string, models.LLMCall, error) {
+	systemPrompt := "You are an expert software engineer. Revise the file content based on architect feedback. Return ONLY the complete file content — no explanations, no markdown fences."
+
+	userPrompt := buildFileContentPrompt(plan, task, filePath, currentContent, siblingContents)
+	userPrompt += fmt.Sprintf("\n\n## Architect Revision Feedback\nThe architect reviewed the previous version and requested revisions:\n\n%s\n\nIncorporate this feedback. Return ONLY the complete revised file content.", architectFeedback)
+
+	response, call, err := callLLM(ctx, client, "implementer-revise", modelName, systemPrompt, userPrompt)
+	if err != nil {
+		return "", call, fmt.Errorf("implementer revision LLM call failed: %w", err)
+	}
+
+	content := response
+	trimmed := strings.TrimSpace(content)
+	if strings.HasPrefix(trimmed, "```") {
+		lines := strings.SplitN(trimmed, "\n", 2)
+		if len(lines) == 2 {
+			content = lines[1]
+		} else {
+			content = trimmed
+		}
+		content = strings.TrimSuffix(strings.TrimSpace(content), "```")
+		content = strings.TrimSpace(content) + "\n"
+	}
+
+	return content, call, nil
+}
+
 // ReadFileContents reads the given relative file paths from baseDir and returns
 // a map of path -> content. Files that cannot be read are silently skipped.
 // Files larger than maxSize bytes are truncated with a marker.

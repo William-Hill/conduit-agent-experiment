@@ -181,6 +181,27 @@ func TestBuildFileContentPromptNoSiblings(t *testing.T) {
 	}
 }
 
+func TestReviseFileContent(t *testing.T) {
+	server := mockLLMServer(t, "package main\n\nfunc main() {\n\tfmt.Println(\"revised\")\n}\n")
+	defer server.Close()
+
+	client := llm.NewClient(server.URL, "test-key", "test-model")
+
+	plan := PatchPlan{PlanSummary: "Fix naming"}
+	task := models.Task{ID: "test", Title: "test", Description: "test"}
+
+	content, call, err := ReviseFileContent(context.Background(), client, "test-model", plan, task, "main.go", "package main", map[string]string{}, "Please use consistent naming")
+	if err != nil {
+		t.Fatalf("ReviseFileContent error: %v", err)
+	}
+	if !strings.Contains(content, "revised") {
+		t.Errorf("expected revised content, got: %s", content)
+	}
+	if call.Agent != "implementer-revise" {
+		t.Errorf("call agent = %q, want implementer-revise", call.Agent)
+	}
+}
+
 func TestReadFileContents(t *testing.T) {
 	dir := t.TempDir()
 

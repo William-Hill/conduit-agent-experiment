@@ -15,6 +15,7 @@ policy:
   allow_merge: false
   require_rationale: true
   max_files_changed: 10
+  max_revisions: 1
 
 execution:
   use_worktree: true

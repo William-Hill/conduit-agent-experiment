@@ -36,6 +36,7 @@ type PolicyConfig struct {
 	AllowMerge       bool   `mapstructure:"allow_merge"`
 	RequireRationale bool   `mapstructure:"require_rationale"`
 	MaxFilesChanged  int    `mapstructure:"max_files_changed"`
+	MaxRevisions     int    `mapstructure:"max_revisions"`
 }
 
 type ExecutionConfig struct {

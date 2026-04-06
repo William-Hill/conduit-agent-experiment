@@ -45,6 +45,7 @@ type Run struct {
 	BaselineCommands   []CommandLog      `json:"baseline_commands,omitempty"`
 	ArchitectDecision  string        `json:"architect_decision,omitempty"`
 	ArchitectReview    string        `json:"architect_review,omitempty"`
+	Revisions          int           `json:"revisions,omitempty"`
 	PRURL              string        `json:"pr_url,omitempty"`
 	LLMCalls           []LLMCall     `json:"llm_calls,omitempty"`
 }

@@ -272,43 +272,118 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 		}, nil
 	}
 
-	// --- 8. Git diff ---
-	diffLog := runner.Run(ctx, "git diff")
-	diff := diffLog.Stdout
+	// --- 8-10. Verify-and-review loop (with optional revision) ---
+	maxRevisions := cfg.Policy.MaxRevisions
+	revision := 0
+	var diff string
+	var newFiles map[string]string
+	var verifierReport agents.VerifierReport
+	var architectReview agents.ArchitectReviewResult
 
-	// Capture newly created files (not in git diff).
-	newFiles := captureNewFiles(runner.WorkDir, plan.FilesToCreate)
+	for {
+		// Git diff.
+		diffLog := runner.Run(ctx, "git diff")
+		diff = diffLog.Stdout
 
-	// --- 9. Verifier ---
-	verifierReport := agents.Verify(ctx, runner, dossier)
-	agentsInvoked = append(agentsInvoked, "verifier")
+		// Capture newly created files (not in git diff).
+		newFiles = captureNewFiles(runner.WorkDir, plan.FilesToCreate)
 
-	patchFailures, envFailures := agents.ClassifyResults(baselineLogs, verifierReport.Commands)
-	verifierReport.PatchFailures = patchFailures
-	verifierReport.EnvironmentFailures = envFailures
+		// Verifier.
+		verifierReport = agents.Verify(ctx, runner, dossier)
+		agentsInvoked = append(agentsInvoked, "verifier")
 
-	// --- 10. Architect ---
-	archReviewModel := mcfg.ModelForRole("architect", archModel)
-	archReviewClient := llm.NewClient(mcfg.Provider.BaseURL, mcfg.APIKey, archReviewModel)
+		patchFailures, envFailures := agents.ClassifyResults(baselineLogs, verifierReport.Commands)
+		verifierReport.PatchFailures = patchFailures
+		verifierReport.EnvironmentFailures = envFailures
 
-	supplementalDocs := findSupplementalDocs(runner.WorkDir, dossier)
+		// Architect.
+		archReviewModel := mcfg.ModelForRole("architect", archModel)
+		archReviewClient := llm.NewClient(mcfg.Provider.BaseURL, mcfg.APIKey, archReviewModel)
 
-	architectInput := agents.ArchitectInput{
-		Diff:             diff,
-		Dossier:          dossier,
-		Plan:             plan,
-		VerifierReport:   verifierReport,
-		SupplementalDocs: supplementalDocs,
-		FailedFiles:      failedFiles,
-		NewFiles:         newFiles,
+		supplementalDocs := findSupplementalDocs(runner.WorkDir, dossier)
+
+		architectInput := agents.ArchitectInput{
+			Diff:             diff,
+			Dossier:          dossier,
+			Plan:             plan,
+			VerifierReport:   verifierReport,
+			SupplementalDocs: supplementalDocs,
+			FailedFiles:      failedFiles,
+			NewFiles:         newFiles,
+		}
+
+		var archCalls []models.LLMCall
+		architectReview, archCalls, err = agents.ArchitectReview(ctx, archReviewClient, archReviewModel, architectInput)
+		llmCalls = append(llmCalls, archCalls...)
+		if err != nil {
+			return nil, fmt.Errorf("architect review: %w", err)
+		}
+		agentsInvoked = append(agentsInvoked, "architect")
+
+		// Check if we should revise.
+		if architectReview.Recommendation != agents.RecommendRevise || revision >= maxRevisions {
+			break
+		}
+
+		// --- Revision round ---
+		revision++
+		log.Printf("architect recommended revise (round %d/%d), re-generating files", revision, maxRevisions)
+
+		feedback := architectReview.Rationale
+		if len(architectReview.Suggestions) > 0 {
+			feedback += "\nSuggestions:\n"
+			for _, s := range architectReview.Suggestions {
+				feedback += "- " + s + "\n"
+			}
+		}
+
+		// Re-generate files with architect feedback.
+		revisedSiblings := make(map[string]string)
+		for _, fc := range plan.FilesToChange {
+			if fc.Action == "delete" {
+				continue
+			}
+			fullPath, pathErr := safePath(runner.WorkDir, fc.Path)
+			if pathErr != nil {
+				continue
+			}
+			currentContent := ""
+			data, readErr := os.ReadFile(fullPath)
+			if readErr == nil {
+				currentContent = string(data)
+			}
+			newContent, genCall, genErr := agents.ReviseFileContent(ctx, implClient, implModel, plan, task, fc.Path, currentContent, revisedSiblings, feedback)
+			if genErr != nil {
+				log.Printf("revision failed for %s: %v", fc.Path, genErr)
+				continue
+			}
+			llmCalls = append(llmCalls, genCall)
+			revisedSiblings[fc.Path] = newContent
+			os.WriteFile(fullPath, []byte(newContent), 0644)
+		}
+		for _, fc := range plan.FilesToCreate {
+			fullPath, pathErr := safePath(runner.WorkDir, fc.Path)
+			if pathErr != nil {
+				continue
+			}
+			currentContent := ""
+			data, readErr := os.ReadFile(fullPath)
+			if readErr == nil {
+				currentContent = string(data)
+			}
+			newContent, genCall, genErr := agents.ReviseFileContent(ctx, implClient, implModel, plan, task, fc.Path, currentContent, revisedSiblings, feedback)
+			if genErr != nil {
+				log.Printf("revision failed for %s: %v", fc.Path, genErr)
+				continue
+			}
+			llmCalls = append(llmCalls, genCall)
+			revisedSiblings[fc.Path] = newContent
+			os.WriteFile(fullPath, []byte(newContent), 0644)
+		}
+		agentsInvoked = append(agentsInvoked, "implementer-revise")
 	}
 
-	architectReview, archCalls, err := agents.ArchitectReview(ctx, archReviewClient, archReviewModel, architectInput)
-	llmCalls = append(llmCalls, archCalls...)
-	if err != nil {
-		return nil, fmt.Errorf("architect review: %w", err)
-	}
-	agentsInvoked = append(agentsInvoked, "architect")
+	run.Revisions = revision
 
 	// --- 11. GitHub PR ---
 	prURL := ""
