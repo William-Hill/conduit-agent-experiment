@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/llm"
@@ -124,5 +125,40 @@ func TestArchitectReviewBadJSON(t *testing.T) {
 	_, _, err := ArchitectReview(context.Background(), client, "gemini-2.5-flash", input)
 	if err == nil {
 		t.Fatal("expected error on bad JSON, got nil")
+	}
+}
+
+func TestBuildArchitectPromptNewFiles(t *testing.T) {
+	input := ArchitectInput{
+		Diff:    "--- a/foo.go\n+++ b/foo.go",
+		Dossier: models.Dossier{TaskID: "task-001"},
+		Plan:    PatchPlan{PlanSummary: "some plan"},
+		VerifierReport: VerifierReport{OverallPass: true, Summary: "pass"},
+		NewFiles: map[string]string{
+			"scripts/update.sh": "#!/bin/bash\necho hello",
+		},
+	}
+	prompt := buildArchitectPrompt(input)
+	if !strings.Contains(prompt, "Newly Created Files") {
+		t.Error("prompt should contain Newly Created Files section")
+	}
+	if !strings.Contains(prompt, "scripts/update.sh") {
+		t.Error("prompt should contain new file path")
+	}
+	if !strings.Contains(prompt, "echo hello") {
+		t.Error("prompt should contain new file content")
+	}
+}
+
+func TestBuildArchitectPromptNoNewFiles(t *testing.T) {
+	input := ArchitectInput{
+		Diff:    "--- a/foo.go\n+++ b/foo.go",
+		Dossier: models.Dossier{TaskID: "task-001"},
+		Plan:    PatchPlan{PlanSummary: "some plan"},
+		VerifierReport: VerifierReport{OverallPass: true, Summary: "pass"},
+	}
+	prompt := buildArchitectPrompt(input)
+	if strings.Contains(prompt, "Newly Created Files") {
+		t.Error("prompt should NOT contain Newly Created Files when NewFiles is empty")
 	}
 }

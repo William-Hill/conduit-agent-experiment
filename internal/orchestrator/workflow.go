@@ -270,6 +270,9 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 	diffLog := runner.Run(ctx, "git diff")
 	diff := diffLog.Stdout
 
+	// Capture newly created files (not in git diff).
+	newFiles := captureNewFiles(runner.WorkDir, plan.FilesToCreate)
+
 	// --- 9. Verifier ---
 	verifierReport := agents.Verify(ctx, runner, dossier)
 	agentsInvoked = append(agentsInvoked, "verifier")
@@ -287,6 +290,7 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 		VerifierReport:   verifierReport,
 		SupplementalDocs: supplementalDocs,
 		FailedFiles:      failedFiles,
+		NewFiles:         newFiles,
 	}
 
 	architectReview, archCalls, err := agents.ArchitectReview(ctx, archReviewClient, archReviewModel, architectInput)
@@ -354,6 +358,7 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 	run.VerifierSummary = verifierReport.Summary
 	run.ImplementerPlan = plan.PlanSummary
 	run.ImplementerDiff = diff
+	run.NewFiles = newFiles
 	run.ArchitectDecision = architectReview.Recommendation
 	run.ArchitectReview = architectReview.Rationale
 	run.PRURL = prURL
@@ -380,6 +385,23 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 		LLMCalls:        llmCalls,
 		PRURL:           prURL,
 	}, nil
+}
+
+// captureNewFiles reads the content of newly created files from the worktree.
+func captureNewFiles(workDir string, filesToCreate []agents.FileCreate) map[string]string {
+	newFiles := make(map[string]string)
+	for _, fc := range filesToCreate {
+		fullPath, pathErr := safePath(workDir, fc.Path)
+		if pathErr != nil {
+			continue
+		}
+		data, readErr := os.ReadFile(fullPath)
+		if readErr != nil {
+			continue
+		}
+		newFiles[fc.Path] = string(data)
+	}
+	return newFiles
 }
 
 // findSupplementalDocs looks for ADR/design docs in the repo that relate to

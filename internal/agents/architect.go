@@ -45,6 +45,7 @@ type ArchitectInput struct {
 	VerifierReport   VerifierReport
 	SupplementalDocs map[string]string // path -> content of ADRs/docs
 	FailedFiles      []string          // files where generation failed (partial implementation)
+	NewFiles         map[string]string // path -> content of newly created files (not in git diff)
 }
 
 // ArchitectReviewResult is the structured output from the Architect agent.
@@ -156,6 +157,15 @@ func buildArchitectPrompt(input ArchitectInput) string {
 		fmt.Fprintf(&b, "## Supplemental Documents\n")
 		for path, content := range input.SupplementalDocs {
 			fmt.Fprintf(&b, "### %s\n%s\n\n", path, content)
+		}
+	}
+
+	// New files not in the diff (untracked).
+	if len(input.NewFiles) > 0 {
+		fmt.Fprintf(&b, "## Newly Created Files\n")
+		fmt.Fprintf(&b, "These files were created by the implementer but are not in the diff (untracked by git).\n\n")
+		for path, content := range input.NewFiles {
+			fmt.Fprintf(&b, "### %s\n```\n%s\n```\n\n", path, content)
 		}
 	}
 

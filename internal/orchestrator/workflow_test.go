@@ -282,3 +282,29 @@ func TestRunWorkflowM2(t *testing.T) {
 		t.Errorf("FinalStatus = %q, want %q", result.Run.FinalStatus, models.RunStatusSuccess)
 	}
 }
+
+func TestCaptureNewFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Write a test file to the temp dir.
+	scriptPath := filepath.Join(tmpDir, "scripts")
+	os.MkdirAll(scriptPath, 0755)
+	os.WriteFile(filepath.Join(scriptPath, "update.sh"), []byte("#!/bin/bash\necho hello"), 0644)
+
+	filesToCreate := []agents.FileCreate{
+		{Path: "scripts/update.sh", Description: "test script"},
+		{Path: "nonexistent/file.txt", Description: "should be skipped"},
+	}
+
+	result := captureNewFiles(tmpDir, filesToCreate)
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(result))
+	}
+	if result["scripts/update.sh"] != "#!/bin/bash\necho hello" {
+		t.Errorf("unexpected content: %q", result["scripts/update.sh"])
+	}
+	if _, ok := result["nonexistent/file.txt"]; ok {
+		t.Error("nonexistent file should not be in results")
+	}
+}
