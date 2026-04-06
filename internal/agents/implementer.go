@@ -73,10 +73,10 @@ func CreatePatchPlan(ctx context.Context, client *llm.Client, modelName string, 
 }
 
 // GenerateFileContent asks the LLM to produce the full content for a single file.
-func GenerateFileContent(ctx context.Context, client *llm.Client, modelName string, plan PatchPlan, task models.Task, filePath, currentContent string) (string, models.LLMCall, error) {
+func GenerateFileContent(ctx context.Context, client *llm.Client, modelName string, plan PatchPlan, task models.Task, filePath, currentContent string, siblingContents map[string]string) (string, models.LLMCall, error) {
 	systemPrompt := "You are an expert software engineer. Generate the complete, production-ready file content as requested. Return ONLY the file content — no explanations, no markdown fences."
 
-	userPrompt := buildFileContentPrompt(plan, task, filePath, currentContent)
+	userPrompt := buildFileContentPrompt(plan, task, filePath, currentContent, siblingContents)
 
 	response, call, err := callLLM(ctx, client, "implementer", modelName, systemPrompt, userPrompt)
 	if err != nil {
@@ -147,10 +147,25 @@ func buildImplementerPrompt(task models.Task, dossier models.Dossier, fileConten
 	return b.String()
 }
 
-func buildFileContentPrompt(plan PatchPlan, task models.Task, filePath, currentContent string) string {
+func buildFileContentPrompt(plan PatchPlan, task models.Task, filePath, currentContent string, siblingContents map[string]string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "## Task\n%s\n\n", task.Title)
 	fmt.Fprintf(&b, "## Plan Summary\n%s\n\n", plan.PlanSummary)
+
+	// Show already-generated sibling files for naming consistency.
+	if len(siblingContents) > 0 {
+		fmt.Fprintf(&b, "## Already Generated Files in This Plan\n")
+		fmt.Fprintf(&b, "IMPORTANT: Use the exact names, types, and signatures defined in these files. Do not invent alternative names.\n\n")
+		for path, content := range siblingContents {
+			// Cap each sibling at 200 lines to control prompt size.
+			lines := strings.Split(content, "\n")
+			if len(lines) > 200 {
+				content = strings.Join(lines[:200], "\n") + "\n// ... truncated"
+			}
+			fmt.Fprintf(&b, "### %s\n```\n%s\n```\n\n", path, content)
+		}
+	}
+
 	fmt.Fprintf(&b, "## File to Generate\n%s\n\n", filePath)
 
 	if currentContent != "" {

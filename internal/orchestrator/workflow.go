@@ -168,6 +168,7 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 	// --- 7. Implementer Phase 2: generate file contents ---
 	var failedFiles []string
 	totalFiles := plan.TotalFiles()
+	generatedSiblings := make(map[string]string)
 
 	for _, fc := range plan.FilesToChange {
 		fullPath, pathErr := safePath(runner.WorkDir, fc.Path)
@@ -195,13 +196,14 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 			}
 		}
 
-		newContent, genCall, err := agents.GenerateFileContent(ctx, implClient, implModel, plan, task, fc.Path, currentContent)
+		newContent, genCall, err := agents.GenerateFileContent(ctx, implClient, implModel, plan, task, fc.Path, currentContent, generatedSiblings)
 		if err != nil {
 			log.Printf("implementer: generation failed for %s: %v — marking as failed, continuing", fc.Path, err)
 			failedFiles = append(failedFiles, fc.Path)
 			continue
 		}
 		llmCalls = append(llmCalls, genCall)
+		generatedSiblings[fc.Path] = newContent
 
 		// Ensure parent directory exists and write file.
 		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
@@ -220,13 +222,14 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 			continue
 		}
 
-		newContent, genCall, err := agents.GenerateFileContent(ctx, implClient, implModel, plan, task, fc.Path, "")
+		newContent, genCall, err := agents.GenerateFileContent(ctx, implClient, implModel, plan, task, fc.Path, "", generatedSiblings)
 		if err != nil {
 			log.Printf("implementer: generation failed for %s: %v — marking as failed, continuing", fc.Path, err)
 			failedFiles = append(failedFiles, fc.Path)
 			continue
 		}
 		llmCalls = append(llmCalls, genCall)
+		generatedSiblings[fc.Path] = newContent
 
 		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
 			return nil, fmt.Errorf("creating dir for %s: %w", fc.Path, err)

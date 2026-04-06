@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/llm"
@@ -120,7 +121,7 @@ type Config struct {
 	}
 	currentContent := "package config\n\ntype Config struct{}\n"
 
-	content, llmCall, err := GenerateFileContent(context.Background(), client, "gemini-2.5-flash", plan, task, "internal/config/config.go", currentContent)
+	content, llmCall, err := GenerateFileContent(context.Background(), client, "gemini-2.5-flash", plan, task, "internal/config/config.go", currentContent, map[string]string{})
 	if err != nil {
 		t.Fatalf("GenerateFileContent() error: %v", err)
 	}
@@ -144,12 +145,39 @@ func TestGenerateFileContentStripsMarkdownFences(t *testing.T) {
 	plan := PatchPlan{PlanSummary: "some plan"}
 	task := models.Task{ID: "task-001", Title: "test"}
 
-	content, _, err := GenerateFileContent(context.Background(), client, "gemini-2.5-flash", plan, task, "internal/config/config.go", "")
+	content, _, err := GenerateFileContent(context.Background(), client, "gemini-2.5-flash", plan, task, "internal/config/config.go", "", map[string]string{})
 	if err != nil {
 		t.Fatalf("GenerateFileContent() error: %v", err)
 	}
 	if content != expectedCode {
 		t.Errorf("content = %q, want %q", content, expectedCode)
+	}
+}
+
+func TestBuildFileContentPromptWithSiblings(t *testing.T) {
+	plan := PatchPlan{PlanSummary: "Add error constants and use them"}
+	task := models.Task{ID: "test", Title: "test task", Description: "test"}
+	siblings := map[string]string{
+		"pkg/errors.go": "package pkg\n\nvar ErrFoo = errors.New(\"foo\")\n",
+	}
+	prompt := buildFileContentPrompt(plan, task, "pkg/handler.go", "package pkg", siblings)
+	if !strings.Contains(prompt, "Already Generated Files") {
+		t.Error("prompt should contain sibling section")
+	}
+	if !strings.Contains(prompt, "ErrFoo") {
+		t.Error("prompt should contain sibling symbol name")
+	}
+	if !strings.Contains(prompt, "Do not invent alternative names") {
+		t.Error("prompt should contain consistency instruction")
+	}
+}
+
+func TestBuildFileContentPromptNoSiblings(t *testing.T) {
+	plan := PatchPlan{PlanSummary: "Simple change"}
+	task := models.Task{ID: "test", Title: "test task", Description: "test"}
+	prompt := buildFileContentPrompt(plan, task, "pkg/foo.go", "package pkg", nil)
+	if strings.Contains(prompt, "Already Generated Files") {
+		t.Error("prompt should NOT contain sibling section when empty")
 	}
 }
 
