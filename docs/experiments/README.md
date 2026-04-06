@@ -64,6 +64,7 @@ Observations that don't fit the existing taxonomy are flagged explicitly as cand
 | 02 | 2026-04-05 | task-gh-576: HTTP status codes for validation errors | L1 | low | failed | 182s | Agent's architectural intent was correct; build failed due to cross-file naming inconsistency in generated code. Architect caught both the build failure and a deeper semantic flaw. |
 | 03 | 2026-04-05 | task-gh-645: Automate version constant update in built-in connectors | L1 | low | failed | 95s | Most focused run (2 files, 5 LLM calls). Architect caught a force-push anti-pattern in the CI workflow. Verifier provided zero signal on the non-Go deliverable. Primary artifact (script) lost due to git diff limitation. |
 | 04 | 2026-04-05 | task-gh-576: HTTP status codes (re-run with pipeline fixes) | L1 | low | failed | 142s | **Re-run of exp 02 with all 5 fixes.** Cross-file naming inconsistency eliminated. Revision loop fired (first time). Baseline verifier classified go vet as env. New failure: hallucinated import (`pkg/config` doesn't exist). Reveals knowledge gap as next improvement target. |
+| 05 | 2026-04-06 | task-gh-576: HTTP status codes (with package inventory) | L1 | low | failed | 557s | **BUILD PASSES for the first time.** Package inventory (96 pkgs) prevented hallucinated imports. Only remaining failure: test syntax error (missing brace). One compile-check loop away from full success. Key insight: the limiting factor is agent architecture (no tools, no iteration), not model capability. |
 
 ## How to Read an Entry
 
