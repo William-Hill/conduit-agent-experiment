@@ -78,7 +78,18 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 	if err != nil {
 		return nil, fmt.Errorf("walking repo: %w", err)
 	}
+
+	// Build symbol index for package inventory (non-fatal on failure).
+	var packageInventory map[string][]string
+	symbolIdx, symErr := ingest.BuildSymbolIndex(cfg.Target.RepoPath)
+	if symErr != nil {
+		log.Printf("symbol index failed (continuing without inventory): %v", symErr)
+	} else {
+		packageInventory = ingest.BuildPackageInventory(symbolIdx, cfg.Target.RepoPath)
+	}
+
 	dossier := retrieval.BuildDossier(task, inv)
+	dossier.PackageInventory = packageInventory
 
 	// --- 3. Archivist: enhance dossier via LLM ---
 	var llmCalls []models.LLMCall
