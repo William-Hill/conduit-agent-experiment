@@ -89,7 +89,6 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 	}
 
 	dossier := retrieval.BuildDossier(task, inv)
-	dossier.PackageInventory = packageInventory
 
 	// --- 3. Archivist: enhance dossier via LLM ---
 	var llmCalls []models.LLMCall
@@ -102,6 +101,9 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 	}
 	dossier = enhanced
 	agentsInvoked = append(agentsInvoked, "archivist")
+
+	// Set package inventory AFTER archivist enhancement (which replaces the dossier).
+	dossier.PackageInventory = packageInventory
 
 	// --- 4. Triage re-check after archivist ---
 	run := models.Run{
