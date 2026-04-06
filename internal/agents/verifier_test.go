@@ -61,3 +61,37 @@ func TestVerifyNoCommands(t *testing.T) {
 		t.Error("expected OverallPass=true when no commands to run")
 	}
 }
+
+func TestClassifyResults(t *testing.T) {
+	baseline := []models.CommandLog{
+		{Command: "go build ./...", ExitCode: 0},
+		{Command: "go vet ./...", ExitCode: 1}, // pre-existing failure
+	}
+	postPatch := []models.CommandLog{
+		{Command: "go build ./...", ExitCode: 1}, // new failure from patch
+		{Command: "go vet ./...", ExitCode: 1},   // same as baseline
+	}
+	patchFails, envFails := ClassifyResults(baseline, postPatch)
+	if len(patchFails) != 1 || patchFails[0] != "go build ./..." {
+		t.Errorf("patch failures = %v, want [go build ./...]", patchFails)
+	}
+	if len(envFails) != 1 || envFails[0] != "go vet ./..." {
+		t.Errorf("env failures = %v, want [go vet ./...]", envFails)
+	}
+}
+
+func TestClassifyResultsAllPass(t *testing.T) {
+	baseline := []models.CommandLog{
+		{Command: "go build ./...", ExitCode: 0},
+	}
+	postPatch := []models.CommandLog{
+		{Command: "go build ./...", ExitCode: 0},
+	}
+	patchFails, envFails := ClassifyResults(baseline, postPatch)
+	if len(patchFails) != 0 {
+		t.Errorf("expected no patch failures, got %v", patchFails)
+	}
+	if len(envFails) != 0 {
+		t.Errorf("expected no env failures, got %v", envFails)
+	}
+}

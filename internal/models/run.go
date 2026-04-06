@@ -42,6 +42,7 @@ type Run struct {
 	ImplementerPlan    string        `json:"implementer_plan,omitempty"`
 	ImplementerDiff    string        `json:"implementer_diff,omitempty"`
 	NewFiles           map[string]string `json:"new_files,omitempty"` // path -> content for newly created files
+	BaselineCommands   []CommandLog      `json:"baseline_commands,omitempty"`
 	ArchitectDecision  string        `json:"architect_decision,omitempty"`
 	ArchitectReview    string        `json:"architect_review,omitempty"`
 	PRURL              string        `json:"pr_url,omitempty"`

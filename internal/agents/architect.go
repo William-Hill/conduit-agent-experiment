@@ -139,6 +139,19 @@ func buildArchitectPrompt(input ArchitectInput) string {
 	fmt.Fprintf(&b, "Overall: %s\n", pass)
 	fmt.Fprintf(&b, "Summary: %s\n\n", input.VerifierReport.Summary)
 
+	if len(input.VerifierReport.EnvironmentFailures) > 0 {
+		fmt.Fprintf(&b, "\nNote: the following commands failed in both the baseline (before patch) and post-patch runs, indicating pre-existing environment issues rather than patch-caused failures:\n")
+		for _, cmd := range input.VerifierReport.EnvironmentFailures {
+			fmt.Fprintf(&b, "- %s (environment)\n", cmd)
+		}
+	}
+	if len(input.VerifierReport.PatchFailures) > 0 {
+		fmt.Fprintf(&b, "\nThe following commands passed before the patch but fail after, indicating patch-caused failures:\n")
+		for _, cmd := range input.VerifierReport.PatchFailures {
+			fmt.Fprintf(&b, "- %s (patch-caused)\n", cmd)
+		}
+	}
+
 	// The diff.
 	fmt.Fprintf(&b, "## Diff\n```diff\n%s\n```\n\n", input.Diff)
 

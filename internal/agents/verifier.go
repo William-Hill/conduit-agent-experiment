@@ -12,9 +12,11 @@ import (
 
 // VerifierReport summarizes the results of running validation commands.
 type VerifierReport struct {
-	Commands    []models.CommandLog `json:"commands"`
-	OverallPass bool                `json:"overall_pass"`
-	Summary     string              `json:"summary"`
+	Commands           []models.CommandLog `json:"commands"`
+	OverallPass        bool                `json:"overall_pass"`
+	Summary            string              `json:"summary"`
+	PatchFailures      []string            `json:"patch_failures,omitempty"`
+	EnvironmentFailures []string           `json:"environment_failures,omitempty"`
 }
 
 // allowedCommandPrefixes defines which commands the verifier is permitted to run.
@@ -82,4 +84,39 @@ func Verify(ctx context.Context, runner *execution.CommandRunner, dossier models
 		OverallPass: pass,
 		Summary:     summary,
 	}
+}
+
+// VerifyBaseline runs the same commands as Verify on an unpatched worktree to
+// establish which commands already fail before the patch is applied.
+func VerifyBaseline(ctx context.Context, runner *execution.CommandRunner, dossier models.Dossier) []models.CommandLog {
+	var logs []models.CommandLog
+	for _, cmd := range dossier.LikelyCommands {
+		if !isAllowedCommand(cmd) {
+			continue
+		}
+		log := runner.Run(ctx, cmd)
+		logs = append(logs, log)
+	}
+	return logs
+}
+
+// ClassifyResults compares baseline and post-patch command results.
+// A command that fails in both baseline and post-patch is classified as
+// environmental. A command that passes in baseline but fails post-patch
+// is classified as patch-caused.
+func ClassifyResults(baseline, postPatch []models.CommandLog) (patchFailures, envFailures []string) {
+	baselineStatus := make(map[string]int) // command -> exit code
+	for _, bl := range baseline {
+		baselineStatus[bl.Command] = bl.ExitCode
+	}
+	for _, pp := range postPatch {
+		if pp.ExitCode != 0 {
+			if blCode, ok := baselineStatus[pp.Command]; ok && blCode != 0 {
+				envFailures = append(envFailures, pp.Command)
+			} else {
+				patchFailures = append(patchFailures, pp.Command)
+			}
+		}
+	}
+	return
 }

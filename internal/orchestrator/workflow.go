@@ -127,6 +127,9 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 	}
 	defer runner.Cleanup()
 
+	// --- 5b. Baseline verifier: run commands before patch to establish pre-existing failures ---
+	baselineLogs := agents.VerifyBaseline(ctx, runner, dossier)
+
 	// --- 6. Implementer Phase 1: read top files and create patch plan ---
 	implModel := mcfg.ModelForRole("implementer", archModel)
 	implClient := llm.NewClient(mcfg.Provider.BaseURL, mcfg.APIKey, implModel)
@@ -277,6 +280,10 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 	verifierReport := agents.Verify(ctx, runner, dossier)
 	agentsInvoked = append(agentsInvoked, "verifier")
 
+	patchFailures, envFailures := agents.ClassifyResults(baselineLogs, verifierReport.Commands)
+	verifierReport.PatchFailures = patchFailures
+	verifierReport.EnvironmentFailures = envFailures
+
 	// --- 10. Architect ---
 	archReviewModel := mcfg.ModelForRole("architect", archModel)
 	archReviewClient := llm.NewClient(mcfg.Provider.BaseURL, mcfg.APIKey, archReviewModel)
@@ -354,6 +361,7 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 	// --- 13. Finalize run ---
 	run.AgentsInvoked = agentsInvoked
 	run.CommandsRun = verifierReport.Commands
+	run.BaselineCommands = baselineLogs
 	run.VerifierPass = &pass
 	run.VerifierSummary = verifierReport.Summary
 	run.ImplementerPlan = plan.PlanSummary
