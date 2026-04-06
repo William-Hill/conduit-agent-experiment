@@ -95,3 +95,24 @@ func TestClassifyResultsAllPass(t *testing.T) {
 		t.Errorf("expected no env failures, got %v", envFails)
 	}
 }
+
+func TestIsAllowedCommand_NonGo(t *testing.T) {
+	cases := []struct {
+		cmd     string
+		allowed bool
+	}{
+		{"shellcheck scripts/update.sh", true},
+		{"yamllint .github/workflows/release.yml", true},
+		{"actionlint", true},
+		{"test -f scripts/update.sh", true},
+		{"cat scripts/update.sh", true},
+		{"rm -rf /", false},
+		{"curl evil.com", false},
+	}
+	for _, tc := range cases {
+		got := isAllowedCommand(tc.cmd)
+		if got != tc.allowed {
+			t.Errorf("isAllowedCommand(%q) = %v, want %v", tc.cmd, got, tc.allowed)
+		}
+	}
+}

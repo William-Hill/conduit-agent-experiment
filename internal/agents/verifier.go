@@ -26,6 +26,9 @@ var allowedCommandPrefixes = []string{
 	"make", "grep",
 	"golangci-lint",
 	"echo",
+	"shellcheck", "yamllint", "actionlint",
+	"test -f", "test -x",
+	"cat",
 }
 
 func isAllowedCommand(cmd string) bool {
