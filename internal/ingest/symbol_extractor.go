@@ -297,6 +297,33 @@ func BuildSymbolIndex(repoPath string, opts ...IndexOption) (*SymbolIndex, error
 	return idx, nil
 }
 
+// BuildPackageInventory extracts a compact inventory of packages and their
+// exported error sentinels from a SymbolIndex. Keys are directory paths
+// relative to the repo root (e.g., "pkg/foundation/cerrors"). Values are
+// slices of exported Err* variable names. Packages with no error sentinels
+// are included with an empty slice so the LLM can see they exist.
+func BuildPackageInventory(idx *SymbolIndex, repoPath string) map[string][]string {
+	if idx == nil {
+		return nil
+	}
+
+	dirSentinels := make(map[string][]string)
+	dirSeen := make(map[string]bool)
+
+	for _, s := range idx.Symbols {
+		dir := filepath.Dir(s.File)
+		if !dirSeen[dir] {
+			dirSeen[dir] = true
+			dirSentinels[dir] = nil
+		}
+		if s.Kind == "var" && s.Exported && strings.HasPrefix(s.Name, "Err") {
+			dirSentinels[dir] = append(dirSentinels[dir], s.Name)
+		}
+	}
+
+	return dirSentinels
+}
+
 // SearchSymbols returns symbols whose Name, Signature, or Doc contain the query (case-insensitive).
 func SearchSymbols(index *SymbolIndex, query string) []Symbol {
 	q := strings.ToLower(query)

@@ -246,6 +246,16 @@ type Processor interface {
 // StatusActive is the active status.
 const StatusActive = "active"
 `,
+		"errors/errors.go": `package errors
+
+import "errors"
+
+// ErrNotFound is returned when a resource is not found.
+var ErrNotFound = errors.New("not found")
+
+// ErrUnauthorized is returned when access is denied.
+var ErrUnauthorized = errors.New("unauthorized")
+`,
 	}
 
 	for relPath, content := range files {
@@ -370,6 +380,41 @@ func TestFormatSymbolContext(t *testing.T) {
 	// Verify docs appear.
 	if !strings.Contains(output, "Engine is the core engine.") {
 		t.Error("output should contain Engine doc")
+	}
+}
+
+func TestBuildPackageInventory(t *testing.T) {
+	root := setupSymbolTestRepo(t)
+	idx, err := BuildSymbolIndex(root)
+	if err != nil {
+		t.Fatalf("BuildSymbolIndex error: %v", err)
+	}
+
+	inventory := BuildPackageInventory(idx, root)
+
+	// Verify at least one package has Err* sentinels
+	// (setupSymbolTestRepo creates errors/errors.go with ErrNotFound)
+	foundSentinel := false
+	for _, sentinels := range inventory {
+		for _, s := range sentinels {
+			if strings.HasPrefix(s, "Err") {
+				foundSentinel = true
+			}
+		}
+	}
+	if !foundSentinel {
+		t.Error("expected at least one Err* sentinel in inventory")
+	}
+
+	// Verify packages without error sentinels still appear (with empty or nil slice)
+	hasEmptyPkg := false
+	for _, sentinels := range inventory {
+		if len(sentinels) == 0 {
+			hasEmptyPkg = true
+		}
+	}
+	if !hasEmptyPkg {
+		t.Error("expected at least one package with no error sentinels")
 	}
 }
 
