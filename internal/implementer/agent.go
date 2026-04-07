@@ -39,7 +39,12 @@ type Result struct {
 }
 
 // RunAgent executes the implementer agent against a cloned repo.
-func RunAgent(ctx context.Context, apiKey, repoDir string, dossier *archivist.Dossier, issueTitle, issueBody string, maxIterations int) (*Result, error) {
+// Model can be overridden (e.g. "claude-haiku-4-5-20251001"); defaults to Haiku 4.5.
+func RunAgent(ctx context.Context, apiKey, modelName, repoDir string, dossier *archivist.Dossier, issueTitle, issueBody string, maxIterations int) (*Result, error) {
+	if modelName == "" {
+		modelName = string(anthropic.ModelClaudeHaiku4_5)
+	}
+
 	client := anthropic.NewClient(option.WithAPIKey(apiKey))
 
 	tools, err := NewTools(repoDir)
@@ -49,13 +54,26 @@ func RunAgent(ctx context.Context, apiKey, repoDir string, dossier *archivist.Do
 
 	userPrompt := buildPrompt(issueTitle, issueBody, dossier)
 
+	// Mark system prompt and user context as cacheable so they aren't
+	// re-billed at full input price on every iteration. Cache hits cost
+	// 10% of input price — significant savings over 20+ iterations.
+	cache := anthropic.NewBetaCacheControlEphemeralParam()
+
 	runner := client.Beta.Messages.NewToolRunner(tools, anthropic.BetaToolRunnerParams{
 		BetaMessageNewParams: anthropic.BetaMessageNewParams{
-			Model:     anthropic.ModelClaudeSonnet4_6,
+			Model:     anthropic.Model(modelName),
 			MaxTokens: 16384,
-			System:    []anthropic.BetaTextBlockParam{{Text: systemPrompt}},
+			System: []anthropic.BetaTextBlockParam{{
+				Text:         systemPrompt,
+				CacheControl: cache,
+			}},
 			Messages: []anthropic.BetaMessageParam{
-				anthropic.NewBetaUserMessage(anthropic.NewBetaTextBlock(userPrompt)),
+				anthropic.NewBetaUserMessage(anthropic.BetaContentBlockParamUnion{
+					OfText: &anthropic.BetaTextBlockParam{
+						Text:         userPrompt,
+						CacheControl: cache,
+					},
+				}),
 			},
 		},
 		MaxIterations: maxIterations,

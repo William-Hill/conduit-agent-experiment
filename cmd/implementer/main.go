@@ -36,6 +36,7 @@ func main() {
 	repo := envOrDefault("IMPL_REPO_NAME", "conduit")
 	forkOwner := envOrDefault("IMPL_FORK_OWNER", "William-Hill")
 	triageDir := envOrDefault("IMPL_TRIAGE_DIR", "data/tasks")
+	modelName := os.Getenv("IMPL_MODEL") // empty = Haiku 4.5 default
 	maxIter := 30
 
 	// 1. Read triage output, pick issue (override with IMPL_ISSUE_NUMBER)
@@ -92,7 +93,7 @@ func main() {
 
 	// 5. Run implementer agent
 	log.Printf("Running implementer agent (max %d iterations)...", maxIter)
-	result, err := implementer.RunAgent(ctx, anthropicKey, repoDir, dossier, fullIssue.Title, fullIssue.Body, maxIter)
+	result, err := implementer.RunAgent(ctx, anthropicKey, modelName, repoDir, dossier, fullIssue.Title, fullIssue.Body, maxIter)
 	if err != nil {
 		log.Fatalf("agent failed: %v", err)
 	}
