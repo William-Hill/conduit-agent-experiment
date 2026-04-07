@@ -1,0 +1,55 @@
+{
+  "timestamp": "2026-04-07T00:46:45Z",
+  "repo": "ConduitIO/conduit",
+  "total_issues": 4,
+  "ranked": [
+    {
+      "number": 1268,
+      "title": "Write a guide about embedding Conduit",
+      "category": "documentation",
+      "difficulty": "L2",
+      "blast_radius": "low",
+      "feasibility": 9,
+      "demand": 7,
+      "score": 63,
+      "rationale": "Very clear documentation task with good pointers to relevant code. High feasibility for an automated agent to generate a working example and guide.",
+      "suitable": true
+    },
+    {
+      "number": 576,
+      "title": "Error codes needs to be documented in Swagger",
+      "category": "documentation",
+      "difficulty": "L1",
+      "blast_radius": "low",
+      "feasibility": 9,
+      "demand": 6,
+      "score": 54,
+      "rationale": "Very clear documentation task with a specific target (Swagger). High feasibility for automation. Also includes a potential suggestion for improving the error codes themselves, which could be part of a follow-up.",
+      "suitable": true
+    },
+    {
+      "number": 1855,
+      "title": "Write a guide for setting up a pipeline (postgres -\u003e kafka)",
+      "category": "documentation",
+      "difficulty": "L2",
+      "blast_radius": "low",
+      "feasibility": 8,
+      "demand": 6,
+      "score": 48,
+      "rationale": "Clear documentation task, but requires setting up a complete, runnable example, including Docker, Postgres, and Kafka. This is a good candidate for automation.",
+      "suitable": true
+    },
+    {
+      "number": 645,
+      "title": "Automate version constant update in built-in connectors",
+      "category": "housekeeping",
+      "difficulty": "L2",
+      "blast_radius": "low",
+      "feasibility": 8,
+      "demand": 5,
+      "score": 40,
+      "rationale": "Clear housekeeping task to automate a manual process. Well-defined objective and scope.",
+      "suitable": true
+    }
+  ]
+}
