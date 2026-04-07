@@ -3,6 +3,7 @@ package implementer
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
@@ -79,9 +80,18 @@ func RunAgent(ctx context.Context, apiKey, modelName, repoDir string, dossier *a
 		MaxIterations: maxIterations,
 	})
 
-	finalMsg, err := runner.RunToCompletion(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("agent run failed: %w", err)
+	var finalMsg *anthropic.BetaMessage
+	for msg, err := range runner.All(ctx) {
+		if err != nil {
+			return nil, fmt.Errorf("agent run failed at iteration %d: %w", runner.IterationCount(), err)
+		}
+		finalMsg = msg
+		// Log tool calls for progress visibility
+		for _, block := range msg.Content {
+			if block.Type == "tool_use" {
+				log.Printf("  [iter %d] tool: %s", runner.IterationCount(), block.Name)
+			}
+		}
 	}
 
 	return &Result{

@@ -3,6 +3,7 @@ package archivist
 import (
 	"context"
 	"fmt"
+	"log"
 	"path/filepath"
 
 	"google.golang.org/adk/agent"
@@ -15,24 +16,21 @@ import (
 	"google.golang.org/genai"
 )
 
-const archivistInstruction = `You are a research archivist for an open source Go project. Given a GitHub issue, explore the repository and identify the files, context, and approach needed to fix it.
+const archivistInstruction = `You are a research archivist for an open source Go project. Given a GitHub issue, explore the repository and identify the files needed to fix it. You have a STRICT budget of 8 tool calls — be efficient.
 
 ## Workflow
-1. Read the issue carefully.
-2. Use list_dir to understand the top-level repo structure.
-3. Use search_files to find code related to the issue.
-4. Use read_file to examine the most relevant files.
-5. Identify the minimal set of files that need to change.
-6. Call save_dossier with your findings.
+1. Use search_files to find code related to the issue keywords (1-2 calls).
+2. Use read_file on the most relevant matches (2-4 calls).
+3. Call save_dossier with your findings (1 call). THIS IS REQUIRED.
 
 ## Rules
-- Include only files directly relevant to fixing the issue (aim for 3-10 files).
-- For each file, explain WHY it's relevant.
-- Be conservative — fewer well-chosen files are better than many loosely related ones.
-- Suggest a concrete, specific approach for the fix.
-- Flag any risks (breaking changes, test impacts, API changes).
+- You MUST call save_dossier. If you do not call it, your work is lost.
+- Aim for 3-8 relevant files. Do not try to read every file — pick the most important ones.
+- For each file, explain WHY it's relevant in one sentence.
+- Suggest a concrete approach for the fix.
+- Flag risks briefly.
 - Do NOT attempt to fix the issue — just research it.
-- You MUST call save_dossier before finishing.`
+- Be fast. Do not over-explore. Call save_dossier as soon as you have enough context.`
 
 // NewArchivistAgent creates the ADK Go archivist agent with the given model and tools.
 func NewArchivistAgent(m model.LLM, tools []tool.Tool) (agent.Agent, error) {
@@ -95,7 +93,14 @@ func RunArchivist(ctx context.Context, geminiKey, repoDir, outputDir, issueTitle
 		if err != nil {
 			return nil, fmt.Errorf("runner event error: %w", err)
 		}
-		_ = event // The save_dossier tool fires as a side effect during the run.
+		// Log tool calls for progress visibility
+		if event != nil && event.Content != nil {
+			for _, part := range event.Content.Parts {
+				if part.FunctionCall != nil {
+					log.Printf("  [archivist] tool: %s", part.FunctionCall.Name)
+				}
+			}
+		}
 	}
 
 	dossier, err := LoadDossier(filepath.Join(outputDir, "dossier.json"))
