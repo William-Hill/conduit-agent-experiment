@@ -144,6 +144,39 @@ The insight: only the implementer truly needs an agent loop. Everything else is 
 | GitHub integration | `gh` CLI | Issue fetching, PR creation |
 | Repo operations | `git clone`, `go build` | Standard toolchain |
 
+## CI Results: PR #2451
+
+The draft PR failed CI with **linting and test errors caused by hallucinated symbols**:
+
+```
+pkg/http/api/status/status.go:61: undefined: connector.ErrNameAlreadyExists
+pkg/http/api/status/status.go:63: undefined: connector.ErrPipelineIDMissing
+pkg/http/api/status/status.go:80: undefined: processor.ErrNameMissing
+pkg/http/api/status/status.go:82: undefined: processor.ErrIDMissing
+pkg/http/api/status/status.go:84: undefined: processor.ErrNameAlreadyExists
+pkg/http/api/status/status.go:86: undefined: processor.ErrParentIDMissing
+```
+
+The implementer created error constant references (`connector.ErrNameAlreadyExists`, `processor.ErrNameMissing`, etc.) that don't exist in the Conduit codebase. This is the **same hallucination failure mode** identified in experiments 02-05: the agent invents symbols that sound right but aren't defined.
+
+### Root Cause
+
+The planner (Gemini Flash) wrote an implementation plan that referenced these error constants. The implementer (Haiku) faithfully wrote the planned code without verifying the symbols exist. The `go build` check in the implementer's cloned repo would have caught this — but the implementer hit its 15-iteration limit before getting to the full build verification.
+
+### Lessons
+
+1. **The implementer must run `go build` BEFORE the iteration limit** — currently it can burn iterations on reading/writing and hit the cap before verifying
+2. **The planner should only reference symbols that appear in the dossier** — the archivist provides file contents, so the planner should be grounded in those
+3. **A post-PR CI check agent could fix these automatically** — read the lint errors, fix the undefined symbols, push again (this is exactly what #18 proposes)
+4. **The package inventory from experiment 05 would prevent this** — injecting known symbols into the planner prompt eliminates hallucinated imports
+
+This failure validates the need for:
+- #17 (automated code review) — would catch this before human review
+- #18 (review feedback loop) — would read the CI failure and fix it
+- #21 (cost tracking) — would show how many iterations were "wasted" on exploration vs. writing
+
+---
+
 ## What's Next
 
 ### Missing from Current Pipeline
