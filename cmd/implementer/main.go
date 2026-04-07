@@ -37,7 +37,7 @@ func main() {
 	forkOwner := envOrDefault("IMPL_FORK_OWNER", "William-Hill")
 	triageDir := envOrDefault("IMPL_TRIAGE_DIR", "data/tasks")
 	modelName := os.Getenv("IMPL_MODEL") // empty = Haiku 4.5 default
-	maxIter := 30
+	maxIter := 15
 
 	// 1. Read triage output, pick issue (override with IMPL_ISSUE_NUMBER)
 	var (
