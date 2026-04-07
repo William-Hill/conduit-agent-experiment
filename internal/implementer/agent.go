@@ -8,27 +8,19 @@ import (
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
-	"github.com/mjhilldigital/conduit-agent-experiment/internal/archivist"
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/planner"
 )
 
-const systemPrompt = `You are an AI software engineer. You receive a GitHub issue AND pre-researched context (relevant file contents, suggested approach). Your job is to WRITE CODE, not explore.
+const systemPrompt = `You are a code writer. You receive an implementation plan with exact file contents. Your ONLY job is to write the files and verify the build.
 
-## STRICT Rules
-- The archivist already explored the repo. The relevant files are in your prompt. DO NOT spend iterations reading more files.
-- Start writing changes by iteration 3. If you haven't called write_file by iteration 3, you are wasting budget.
-- After writing, run "go build ./..." to verify. Fix any errors. That's it.
-- You have a HARD BUDGET of 15 tool calls total. Use them on write_file and run_command, not read_file.
+## Steps
+1. For each file in the plan, call write_file with the exact content provided.
+2. Run "go build ./..." to verify.
+3. If the build fails, read the error, fix the file, and retry.
+4. Run "git diff --stat" to confirm changes.
+5. State what you wrote.
 
-## Workflow
-1. Read the archivist context below (already in this message — no tool calls needed).
-2. Call write_file for each file you need to change (1-3 calls).
-3. Call run_command with "go build ./..." to verify (1 call).
-4. If build fails, fix and retry (2-4 calls).
-5. Call run_command with "git diff" to confirm your changes (1 call).
-6. State what you changed and why.
-
-## When to use read_file
-ONLY if the archivist missed a file you need to see. This should be rare (0-2 calls max).`
+Do NOT explore the codebase. Do NOT read files unless a build fails. Just write the planned files and verify.`
 
 // Result holds the outcome of an implementer agent run.
 type Result struct {
@@ -38,7 +30,7 @@ type Result struct {
 
 // RunAgent executes the implementer agent against a cloned repo.
 // Model can be overridden (e.g. "claude-haiku-4-5-20251001"); defaults to Haiku 4.5.
-func RunAgent(ctx context.Context, apiKey, modelName, repoDir string, dossier *archivist.Dossier, issueTitle, issueBody string, maxIterations int) (*Result, error) {
+func RunAgent(ctx context.Context, apiKey, modelName, repoDir string, plan *planner.ImplementationPlan, maxIterations int) (*Result, error) {
 	if modelName == "" {
 		modelName = string(anthropic.ModelClaudeHaiku4_5)
 	}
@@ -50,7 +42,7 @@ func RunAgent(ctx context.Context, apiKey, modelName, repoDir string, dossier *a
 		return nil, fmt.Errorf("creating tools: %w", err)
 	}
 
-	userPrompt := buildPrompt(issueTitle, issueBody, dossier)
+	userPrompt := buildPrompt(plan)
 
 	// Mark system prompt and user context as cacheable so they aren't
 	// re-billed at full input price on every iteration. Cache hits cost
@@ -97,29 +89,20 @@ func RunAgent(ctx context.Context, apiKey, modelName, repoDir string, dossier *a
 	}, nil
 }
 
-func buildPrompt(issueTitle, issueBody string, dossier *archivist.Dossier) string {
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "Fix this GitHub issue:\n\n## %s\n\n%s\n", issueTitle, issueBody)
-
-	if dossier != nil {
-		sb.WriteString("\n---\n\n## Archivist Research\n\n")
-		fmt.Fprintf(&sb, "### Summary\n%s\n\n", dossier.Summary)
-		fmt.Fprintf(&sb, "### Suggested Approach\n%s\n\n", dossier.Approach)
-
-		if len(dossier.Risks) > 0 {
-			sb.WriteString("### Risks\n")
-			for _, r := range dossier.Risks {
-				fmt.Fprintf(&sb, "- %s\n", r)
-			}
-			sb.WriteString("\n")
-		}
-
-		sb.WriteString("### Relevant Files\n\n")
-		for _, f := range dossier.Files {
-			fmt.Fprintf(&sb, "#### %s\n**Reason:** %s\n```\n%s\n```\n\n", f.Path, f.Reason, f.Content)
-		}
+func buildPrompt(plan *planner.ImplementationPlan) string {
+	if plan == nil {
+		return ""
 	}
-
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "## Implementation Plan\n\n%s\n\n", plan.Summary)
+	sb.WriteString("## Files to Write\n\n")
+	for _, c := range plan.Changes {
+		fmt.Fprintf(&sb, "### %s\n%s\n```\n%s\n```\n\n", c.Path, c.Description, c.Content)
+	}
+	sb.WriteString("## Verification Commands\n")
+	for _, cmd := range plan.Verification {
+		fmt.Fprintf(&sb, "- %s\n", cmd)
+	}
 	return sb.String()
 }
 
