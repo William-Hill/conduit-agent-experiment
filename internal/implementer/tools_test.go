@@ -138,6 +138,44 @@ func TestWriteFile(t *testing.T) {
 	}
 }
 
+func TestReadFileSiblingPrefixEscape(t *testing.T) {
+	dir := t.TempDir()
+	tools, err := NewTools(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool := findTool(tools, "read_file")
+
+	// A path like "../<dirname>-escape/file" resolves to a sibling that shares
+	// the same prefix — this should still be blocked.
+	result := execTool(t, tool, `{"path":"../`+filepath.Base(dir)+`-escape/secret.txt"}`)
+	if !strings.Contains(result, "Error:") {
+		t.Errorf("expected error for sibling-prefix escape, got: %q", result)
+	}
+}
+
+func TestReadFileSymlinkEscape(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a file outside the repo dir
+	outsideDir := t.TempDir()
+	os.WriteFile(filepath.Join(outsideDir, "secret.txt"), []byte("sensitive data"), 0o644)
+
+	// Create a symlink inside dir that points outside
+	os.Symlink(outsideDir, filepath.Join(dir, "escape"))
+
+	tools, err := NewTools(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool := findTool(tools, "read_file")
+
+	result := execTool(t, tool, `{"path":"escape/secret.txt"}`)
+	if !strings.Contains(result, "Error:") {
+		t.Errorf("expected error for symlink escape, got: %q", result)
+	}
+}
+
 func TestWriteFilePathTraversal(t *testing.T) {
 	dir := t.TempDir()
 	tools, err := NewTools(dir)
@@ -249,6 +287,10 @@ func TestSearchFilesNoMatch(t *testing.T) {
 
 func TestRunCommand(t *testing.T) {
 	dir := t.TempDir()
+	// Initialize a go module so `go vet` can run
+	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module test\n\ngo 1.21\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644)
+
 	tools, err := NewTools(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -258,16 +300,13 @@ func TestRunCommand(t *testing.T) {
 		t.Fatal("run_command tool not found")
 	}
 
-	result := execTool(t, tool, `{"command":"echo hello"}`)
-	if !strings.Contains(result, "hello") {
-		t.Errorf("expected 'hello' in output, got: %q", result)
-	}
+	result := execTool(t, tool, `{"command":"go vet ./..."}`)
 	if !strings.Contains(result, "exit_code: 0") {
 		t.Errorf("expected exit_code 0, got: %q", result)
 	}
 }
 
-func TestRunCommandFailure(t *testing.T) {
+func TestRunCommandDisallowed(t *testing.T) {
 	dir := t.TempDir()
 	tools, err := NewTools(dir)
 	if err != nil {
@@ -275,8 +314,22 @@ func TestRunCommandFailure(t *testing.T) {
 	}
 	tool := findTool(tools, "run_command")
 
-	result := execTool(t, tool, `{"command":"exit 1"}`)
-	if !strings.Contains(result, "exit_code: 1") {
-		t.Errorf("expected exit_code 1, got: %q", result)
+	result := execTool(t, tool, `{"command":"rm -rf /"}`)
+	if !strings.Contains(result, "not allowed") {
+		t.Errorf("expected 'not allowed' error, got: %q", result)
+	}
+}
+
+func TestRunCommandDisallowedSubcommand(t *testing.T) {
+	dir := t.TempDir()
+	tools, err := NewTools(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool := findTool(tools, "run_command")
+
+	result := execTool(t, tool, `{"command":"git push --force"}`)
+	if !strings.Contains(result, "not allowed") {
+		t.Errorf("expected 'not allowed' error for git push, got: %q", result)
 	}
 }

@@ -6,9 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/llmutil"
 	"google.golang.org/genai"
 )
 
@@ -120,7 +123,7 @@ Analyze the search results and identify the files relevant to fixing this issue.
 	}
 
 	// Parse JSON response
-	cleaned := cleanJSON(responseText)
+	cleaned := llmutil.CleanJSON(responseText)
 	var dr dossierResponse
 	if err := json.Unmarshal([]byte(cleaned), &dr); err != nil {
 		return nil, fmt.Errorf("parsing archivist response: %w\nraw: %s", err, truncate(responseText, 500))
@@ -189,12 +192,17 @@ func extractKeywords(text string) []string {
 
 // grepRepo runs grep on the repo and returns output.
 func grepRepo(ctx context.Context, repoDir, pattern, glob string) string {
-	args := []string{"-rn", "--include=" + glob, "-l", pattern, "."}
+	args := []string{"-rn", "--include=" + glob, "-l", "-e", pattern, "--", "."}
 	cmd := exec.CommandContext(ctx, "grep", args...)
 	cmd.Dir = repoDir
 	var out bytes.Buffer
 	cmd.Stdout = &out
-	cmd.Run()
+	if err := cmd.Run(); err != nil {
+		// Exit code 1 = no matches (normal). Log other errors for debugging.
+		if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 1 {
+			log.Printf("  [archivist] grep %v in %s failed: %v", args, repoDir, err)
+		}
+	}
 	return out.String()
 }
 
@@ -206,29 +214,55 @@ func listTopLevel(ctx context.Context, repoDir string) string {
 	return string(out)
 }
 
-// readFileContent reads a file from the repo, returning empty string on error.
+// readFileContent reads up to 500 lines of a file from the repo.
+// Returns empty string if the path escapes repoDir or the file can't be read.
 func readFileContent(repoDir, relPath string) string {
-	cmd := exec.Command("head", "-500", relPath)
-	cmd.Dir = repoDir
-	out, err := cmd.Output()
+	// Validate path stays within repoDir.
+	full := filepath.Clean(filepath.Join(repoDir, relPath))
+	cleanRoot := filepath.Clean(repoDir)
+	rel, err := filepath.Rel(cleanRoot, full)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return ""
+	}
+
+	f, err := os.Open(full)
 	if err != nil {
 		return ""
 	}
-	return string(out)
-}
+	defer f.Close()
 
-// cleanJSON strips markdown fences from a JSON response.
-func cleanJSON(s string) string {
-	s = strings.TrimSpace(s)
-	if strings.HasPrefix(s, "```") {
-		if i := strings.Index(s[3:], "\n"); i >= 0 {
-			s = s[3+i+1:]
+	var sb strings.Builder
+	buf := make([]byte, 0, 64*1024)
+	remaining := make([]byte, 0, 4096)
+	lines := 0
+	const maxLines = 500
+
+	for lines < maxLines {
+		tmp := make([]byte, 32*1024)
+		n, readErr := f.Read(tmp)
+		if n > 0 {
+			buf = append(remaining, tmp[:n]...)
+			remaining = remaining[:0]
+			for i := 0; i < len(buf) && lines < maxLines; {
+				nl := bytes.IndexByte(buf[i:], '\n')
+				if nl < 0 {
+					remaining = append(remaining[:0], buf[i:]...)
+					break
+				}
+				sb.Write(buf[i : i+nl+1])
+				lines++
+				i += nl + 1
+			}
 		}
-		if j := strings.LastIndex(s, "```"); j >= 0 {
-			s = s[:j]
+		if readErr != nil {
+			// Write any remaining partial line.
+			if len(remaining) > 0 && lines < maxLines {
+				sb.Write(remaining)
+			}
+			break
 		}
 	}
-	return strings.TrimSpace(s)
+	return sb.String()
 }
 
 func truncate(s string, n int) string {

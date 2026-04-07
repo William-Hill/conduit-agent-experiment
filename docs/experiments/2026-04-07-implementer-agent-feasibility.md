@@ -53,8 +53,8 @@ Using Claude Sonnet 4.6 ($3/$15 per MTok):
 After adding credits and iterating on the pipeline, a successful end-to-end run was completed.
 
 ### Pipeline
-```
-triage (Gemini Flash) → archivist (Gemini Flash, single call) → planner (Gemini Flash, markdown) → reviewer (Gemini Flash, JSON) → implementer (Haiku 4.5, 15 iterations)
+```text
+triage (Gemini Flash) → archivist (Gemini Flash, single call) → planner (Gemini Flash, Markdown) → reviewer (Gemini Flash, JSON) → implementer (Haiku 4.5, 15 iterations)
 ```
 
 ### Results
@@ -62,7 +62,7 @@ triage (Gemini Flash) → archivist (Gemini Flash, single call) → planner (Gem
 | Step | Time | Detail |
 |------|------|--------|
 | Archivist | 21s | Found 7 relevant files via grep + single Gemini call |
-| Planner | 64s | Produced 29K char markdown implementation plan |
+| Planner | 64s | Produced 29K char Markdown implementation plan |
 | Reviewer | 19s | Approved the plan |
 | Implementer | 62s | 15 iterations: 4 write_file, 2 run_command, 9 read/search |
 | **Total** | **~3 min** | **Draft PR created** |

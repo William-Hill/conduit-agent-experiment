@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/archivist"
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/llmutil"
 	"google.golang.org/genai"
 )
 
@@ -54,7 +55,7 @@ func ReviewPlan(ctx context.Context, geminiKey, issueTitle, issueBody string, do
 	}
 
 	var result ReviewResult
-	if err := json.Unmarshal([]byte(cleanJSON(text)), &result); err != nil {
+	if err := json.Unmarshal([]byte(llmutil.CleanJSON(text)), &result); err != nil {
 		return nil, fmt.Errorf("parsing review JSON: %w", err)
 	}
 

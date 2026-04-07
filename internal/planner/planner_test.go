@@ -1,9 +1,11 @@
 package planner
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/archivist"
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/llmutil"
 )
 
 var dossierFixture = archivist.Dossier{
@@ -45,9 +47,9 @@ func TestCleanJSON(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := cleanJSON(tt.input)
+			got := llmutil.CleanJSON(tt.input)
 			if got != tt.want {
-				t.Errorf("cleanJSON() = %q, want %q", got, tt.want)
+				t.Errorf("llmutil.CleanJSON() = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -59,10 +61,10 @@ func TestBuildPlannerPrompt(t *testing.T) {
 	if len(prompt) == 0 {
 		t.Fatal("expected non-empty prompt")
 	}
-	if !contains(prompt, "Fix bug") {
+	if !strings.Contains(prompt, "Fix bug") {
 		t.Error("prompt should contain issue title")
 	}
-	if !contains(prompt, "The thing is broken") {
+	if !strings.Contains(prompt, "The thing is broken") {
 		t.Error("prompt should contain issue body")
 	}
 }
@@ -72,23 +74,11 @@ func TestBuildReviewerPrompt(t *testing.T) {
 		Markdown: "# Fix the bug\n\nChange main.go to fix the nil check.",
 	}
 	prompt := buildReviewerPrompt("Fix bug", "The thing is broken", &dossierFixture, plan)
-	if !contains(prompt, "Implementation Plan") {
+	if !strings.Contains(prompt, "Implementation Plan") {
 		t.Error("reviewer prompt should contain plan section")
 	}
-	if !contains(prompt, "Fix the bug") {
+	if !strings.Contains(prompt, "Fix the bug") {
 		t.Error("reviewer prompt should contain plan content")
 	}
 }
 
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsStr(s, substr))
-}
-
-func containsStr(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}

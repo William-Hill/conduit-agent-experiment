@@ -13,7 +13,7 @@ We built and demonstrated an end-to-end multi-agent pipeline that takes a GitHub
 
 ## The Pipeline
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │  1. Triage Agent (ADK Go + Gemini Flash)                │
 │     Scans GitHub issues, classifies, ranks by score     │
@@ -70,7 +70,7 @@ We built and demonstrated an end-to-end multi-agent pipeline that takes a GitHub
 
 ### Files Changed
 
-```
+```text
 pkg/http/api/status/status.go | 50 +++++++++++++++++++++++++++++++------------
 pkg/pipeline/errors.go        | 44 +++++++++++++++++++------------------
 pkg/pipeline/service.go       | 18 ++++++++++++----
@@ -97,7 +97,7 @@ pkg/pipeline/service.go       | 18 ++++++++++++----
 | Weekly maintenance (4/mo) | 4 | $0.24 |
 | Daily maintenance (30/mo) | 30 | $1.80 |
 
-**The cost of maintaining an open source project's velocity is less than a cup of coffee per month.**
+**The cost of maintaining an open-source project's velocity is less than a cup of coffee per month.**
 
 ### Cost Optimization Techniques Used
 
@@ -148,7 +148,7 @@ The insight: only the implementer truly needs an agent loop. Everything else is 
 
 The draft PR failed CI with **linting and test errors caused by hallucinated symbols**:
 
-```
+```text
 pkg/http/api/status/status.go:61: undefined: connector.ErrNameAlreadyExists
 pkg/http/api/status/status.go:63: undefined: connector.ErrPipelineIDMissing
 pkg/http/api/status/status.go:80: undefined: processor.ErrNameMissing

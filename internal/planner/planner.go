@@ -3,6 +3,7 @@ package planner
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/archivist"
@@ -59,20 +60,6 @@ func CreatePlan(ctx context.Context, geminiKey, issueTitle, issueBody string, do
 	return &ImplementationPlan{Markdown: text}, nil
 }
 
-// cleanJSON strips markdown code fences from model output.
-func cleanJSON(s string) string {
-	s = strings.TrimSpace(s)
-	if strings.HasPrefix(s, "```") {
-		if idx := strings.Index(s, "\n"); idx != -1 {
-			s = s[idx+1:]
-		}
-		if idx := strings.LastIndex(s, "```"); idx != -1 {
-			s = s[:idx]
-		}
-	}
-	return strings.TrimSpace(s)
-}
-
 func buildPlannerPrompt(issueTitle, issueBody string, dossier *archivist.Dossier) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "## Issue: %s\n\n%s\n\n", issueTitle, issueBody)
@@ -89,8 +76,29 @@ func buildPlannerPrompt(issueTitle, issueBody string, dossier *archivist.Dossier
 
 	b.WriteString("## Relevant Files\n\n")
 	for _, f := range dossier.Files {
-		fmt.Fprintf(&b, "### %s\n\nReason: %s\n\n```go\n%s\n```\n\n", f.Path, f.Reason, f.Content)
+		fmt.Fprintf(&b, "### %s\n\nReason: %s\n\n```%s\n%s\n```\n\n", f.Path, f.Reason, langFromPath(f.Path), f.Content)
 	}
 
 	return b.String()
+}
+
+func langFromPath(path string) string {
+	switch filepath.Ext(path) {
+	case ".go":
+		return "go"
+	case ".proto":
+		return "protobuf"
+	case ".yaml", ".yml":
+		return "yaml"
+	case ".json":
+		return "json"
+	case ".py":
+		return "python"
+	case ".sh":
+		return "bash"
+	case ".sql":
+		return "sql"
+	default:
+		return ""
+	}
 }

@@ -40,4 +40,10 @@ func TestSaveThenLoadDossier(t *testing.T) {
 	if got.Approach != want.Approach {
 		t.Errorf("Approach = %q, want %q", got.Approach, want.Approach)
 	}
+	if len(got.Risks) != 1 || got.Risks[0] != want.Risks[0] {
+		t.Errorf("Risks = %v, want %v", got.Risks, want.Risks)
+	}
+	if got.Files[0].Reason != want.Files[0].Reason {
+		t.Errorf("Reason = %q, want %q", got.Files[0].Reason, want.Files[0].Reason)
+	}
 }

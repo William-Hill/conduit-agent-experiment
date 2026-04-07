@@ -50,16 +50,48 @@ func textResult(text string) (anthropic.BetaToolResultBlockParamContentUnion, er
 	}, nil
 }
 
-// safePath resolves a relative path within repoDir, rejecting directory traversal.
+// safePath resolves a relative path within repoDir, rejecting directory traversal
+// and symlink escapes. Uses filepath.Rel to avoid prefix-based bypass.
 func safePath(repoDir, relPath string) (string, error) {
 	if relPath == "" || relPath == "." {
 		return repoDir, nil
 	}
-	full := filepath.Join(repoDir, relPath)
-	full = filepath.Clean(full)
-	if !strings.HasPrefix(full, filepath.Clean(repoDir)) {
+	full := filepath.Clean(filepath.Join(repoDir, relPath))
+	cleanRoot := filepath.Clean(repoDir)
+
+	// Ensure the cleaned path is within the repo root using a separator-aware check.
+	if full != cleanRoot && !strings.HasPrefix(full, cleanRoot+string(filepath.Separator)) {
 		return "", fmt.Errorf("path %q escapes repository root", relPath)
 	}
+
+	// Double-check with filepath.Rel — reject any result starting with "..".
+	rel, err := filepath.Rel(cleanRoot, full)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return "", fmt.Errorf("path %q escapes repository root", relPath)
+	}
+
+	// Resolve symlinks and verify the real path is still inside the repo.
+	realRoot, err := filepath.EvalSymlinks(cleanRoot)
+	if err != nil {
+		return "", fmt.Errorf("resolving repo root: %w", err)
+	}
+	realFull, err := filepath.EvalSymlinks(full)
+	if err != nil {
+		// File may not exist yet (write_file) — fall back to parent dir check.
+		parentDir := filepath.Dir(full)
+		realParent, pErr := filepath.EvalSymlinks(parentDir)
+		if pErr != nil {
+			return full, nil // parent doesn't exist yet either, will be created
+		}
+		if !strings.HasPrefix(realParent, realRoot+string(filepath.Separator)) && realParent != realRoot {
+			return "", fmt.Errorf("path %q escapes repository root via symlink", relPath)
+		}
+		return full, nil
+	}
+	if realFull != realRoot && !strings.HasPrefix(realFull, realRoot+string(filepath.Separator)) {
+		return "", fmt.Errorf("path %q escapes repository root via symlink", relPath)
+	}
+
 	return full, nil
 }
 
@@ -149,11 +181,13 @@ func NewTools(repoDir string) ([]anthropic.BetaTool, error) {
 				}
 			}
 
-			args := []string{"-r", "-n", "--include=*"}
+			args := []string{"-r", "-n"}
 			if input.Glob != "" {
-				args = []string{"-r", "-n", "--include=" + input.Glob}
+				args = append(args, "--include="+input.Glob)
 			}
-			args = append(args, input.Pattern, searchDir)
+			// Use -e to safely pass the pattern (prevents -prefixed patterns
+			// from being interpreted as flags).
+			args = append(args, "-e", input.Pattern, "--", searchDir)
 
 			cmd := exec.CommandContext(ctx, "grep", args...)
 			var stdout, stderr bytes.Buffer
@@ -178,12 +212,47 @@ func NewTools(repoDir string) ([]anthropic.BetaTool, error) {
 		return nil, fmt.Errorf("creating search_files tool: %w", err)
 	}
 
+	// allowedCommands maps the base command to permitted subcommands (empty slice = any subcommand).
+	allowedCommands := map[string][]string{
+		"go":   {"build", "test", "vet", "fmt", "mod"},
+		"make": {},
+		"git":  {"diff", "status", "log"},
+	}
+
 	runCommand, err := toolrunner.NewBetaToolFromJSONSchema[RunCommandInput](
 		"run_command",
-		"Execute a shell command in the repository directory. Use for go build, go test, etc.",
+		"Execute an allowed command in the repository directory. Permitted: go (build/test/vet/fmt/mod), make, git (diff/status/log).",
 		func(ctx context.Context, input RunCommandInput) (anthropic.BetaToolResultBlockParamContentUnion, error) {
-			cmd := exec.CommandContext(ctx, "sh", "-c", input.Command)
+			argv := strings.Fields(input.Command)
+			if len(argv) == 0 {
+				return textResult("Error: empty command")
+			}
+
+			base := filepath.Base(argv[0])
+			allowed, ok := allowedCommands[base]
+			if !ok {
+				return textResult(fmt.Sprintf("Error: command %q is not allowed. Permitted: go, make, git", base))
+			}
+			if len(allowed) > 0 && len(argv) > 1 {
+				sub := argv[1]
+				found := false
+				for _, a := range allowed {
+					if a == sub {
+						found = true
+						break
+					}
+				}
+				if !found {
+					return textResult(fmt.Sprintf("Error: %s %s is not allowed. Permitted subcommands: %v", base, sub, allowed))
+				}
+			}
+
+			cmdCtx, cancel := context.WithTimeout(ctx, 120*1e9) // 2 minute timeout
+			defer cancel()
+
+			cmd := exec.CommandContext(cmdCtx, argv[0], argv[1:]...)
 			cmd.Dir = repoDir
+			cmd.Env = append(os.Environ(), "HOME="+os.Getenv("HOME"))
 
 			var stdout, stderr bytes.Buffer
 			cmd.Stdout = &stdout
