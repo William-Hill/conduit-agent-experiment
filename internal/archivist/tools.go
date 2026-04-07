@@ -85,32 +85,6 @@ func NewTools(repoDir, outputDir string) ([]tool.Tool, error) {
 		return nil, fmt.Errorf("creating read_file tool: %w", err)
 	}
 
-	listDir, err := functiontool.New(functiontool.Config{
-		Name:        "list_dir",
-		Description: "List the entries in a directory. Provide a path relative to the repo root (use '.' for root). Returns one entry per line with a trailing '/' for directories.",
-	}, func(_ tool.Context, input ListDirInput) (ListDirOutput, error) {
-		p, err := safePath(repoDir, input.Path)
-		if err != nil {
-			return ListDirOutput{}, err
-		}
-		entries, err := os.ReadDir(p)
-		if err != nil {
-			return ListDirOutput{}, fmt.Errorf("listing directory: %w", err)
-		}
-		var sb strings.Builder
-		for _, e := range entries {
-			name := e.Name()
-			if e.IsDir() {
-				name += "/"
-			}
-			sb.WriteString(name + "\n")
-		}
-		return ListDirOutput{Entries: sb.String()}, nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("creating list_dir tool: %w", err)
-	}
-
 	searchFiles, err := functiontool.New(functiontool.Config{
 		Name:        "search_files",
 		Description: "Search for a regex pattern in files using grep. Optionally restrict to a subdirectory (path) and/or a file glob pattern. Returns matching lines with file paths and line numbers.",
@@ -192,5 +166,5 @@ func NewTools(repoDir, outputDir string) ([]tool.Tool, error) {
 		return nil, fmt.Errorf("creating save_dossier tool: %w", err)
 	}
 
-	return []tool.Tool{readFile, listDir, searchFiles, saveDossier}, nil
+	return []tool.Tool{readFile, searchFiles, saveDossier}, nil
 }

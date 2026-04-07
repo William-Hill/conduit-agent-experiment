@@ -16,21 +16,22 @@ import (
 	"google.golang.org/genai"
 )
 
-const archivistInstruction = `You are a research archivist for an open source Go project. Given a GitHub issue, explore the repository and identify the files needed to fix it. You have a STRICT budget of 8 tool calls — be efficient.
+const archivistInstruction = `You are a research archivist. Given a GitHub issue, find the relevant source files.
 
-## Workflow
-1. Use search_files to find code related to the issue keywords (1-2 calls).
-2. Use read_file on the most relevant matches (2-4 calls).
-3. Call save_dossier with your findings (1 call). THIS IS REQUIRED.
+You have EXACTLY 3 tools: search_files, read_file, save_dossier.
 
-## Rules
-- You MUST call save_dossier. If you do not call it, your work is lost.
-- Aim for 3-8 relevant files. Do not try to read every file — pick the most important ones.
-- For each file, explain WHY it's relevant in one sentence.
-- Suggest a concrete approach for the fix.
-- Flag risks briefly.
-- Do NOT attempt to fix the issue — just research it.
-- Be fast. Do not over-explore. Call save_dossier as soon as you have enough context.`
+YOUR TASK IN EXACTLY 5 STEPS:
+1. search_files to find relevant code (1 call)
+2. read_file on the 2-3 most relevant results (2-3 calls)
+3. save_dossier with your findings (1 call)
+
+CRITICAL: You MUST call save_dossier on your 4th or 5th tool call. If you do not call save_dossier, ALL your work is lost and the pipeline fails.
+
+When calling save_dossier, provide:
+- summary: one paragraph about what the issue is and what code is involved
+- relevant_files: list of {path, reason} for 3-8 files relevant to the fix
+- risks: any concerns about the change
+- approach: concrete steps to fix the issue`
 
 // NewArchivistAgent creates the ADK Go archivist agent with the given model and tools.
 func NewArchivistAgent(m model.LLM, tools []tool.Tool) (agent.Agent, error) {
