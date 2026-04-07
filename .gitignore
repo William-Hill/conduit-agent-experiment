@@ -1,4 +1,5 @@
 bin/
+/triage
 .env
 data/runs/
 data/indexes/

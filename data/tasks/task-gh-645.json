@@ -11,6 +11,10 @@
     "Version constant format is documented",
     "Existing connector behavior is unchanged"
   ],
+  "verifier_commands": [
+    "go build ./...",
+    "go vet ./..."
+  ],
   "issue_number": 645,
   "status": "pending"
 }

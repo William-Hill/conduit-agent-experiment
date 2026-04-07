@@ -59,23 +59,40 @@ type ArchitectReviewResult struct {
 }
 
 // ArchitectReview asks the LLM to evaluate a patch for architectural alignment
-// and semantic safety. It returns an error if the LLM response cannot be parsed.
-func ArchitectReview(ctx context.Context, client *llm.Client, modelName string, input ArchitectInput) (ArchitectReviewResult, models.LLMCall, error) {
+// and semantic safety. If the first response is not valid JSON, it retries once
+// with the parse error fed back to the model so it can self-correct. It returns
+// all LLM calls made (1 or 2) so token/latency accounting is complete.
+func ArchitectReview(ctx context.Context, client *llm.Client, modelName string, input ArchitectInput) (ArchitectReviewResult, []models.LLMCall, error) {
 	userPrompt := buildArchitectPrompt(input)
 
 	response, call, err := callLLM(ctx, client, "architect", modelName, architectSystemPrompt, userPrompt)
+	calls := []models.LLMCall{call}
 	if err != nil {
-		return ArchitectReviewResult{}, call, fmt.Errorf("architect LLM call failed: %w", err)
+		return ArchitectReviewResult{}, calls, fmt.Errorf("architect LLM call failed: %w", err)
 	}
 
 	cleaned := cleanJSONResponse(response)
 
 	var result ArchitectReviewResult
-	if err := json.Unmarshal([]byte(cleaned), &result); err != nil {
-		return ArchitectReviewResult{}, call, fmt.Errorf("architect response not valid JSON: %w", err)
+	if err := json.Unmarshal([]byte(cleaned), &result); err == nil {
+		return result, calls, nil
+	} else {
+		// Retry once, feeding the parse error back so the model can self-correct.
+		retryPrompt := fmt.Sprintf(
+			"%s\n\n---\nYour previous response was not valid JSON. Parser error: %s\nReturn ONLY a valid JSON object matching the schema. Do not include markdown fences, code blocks, or any text outside the JSON. Ensure every backslash inside a string is either part of a valid escape (\\\", \\\\, \\/, \\b, \\f, \\n, \\r, \\t, \\uXXXX) or doubled.",
+			userPrompt, err.Error(),
+		)
+		response2, call2, retryErr := callLLM(ctx, client, "architect-retry", modelName, architectSystemPrompt, retryPrompt)
+		calls = append(calls, call2)
+		if retryErr != nil {
+			return ArchitectReviewResult{}, calls, fmt.Errorf("architect retry LLM call failed: %w", retryErr)
+		}
+		cleaned2 := cleanJSONResponse(response2)
+		if err2 := json.Unmarshal([]byte(cleaned2), &result); err2 != nil {
+			return ArchitectReviewResult{}, calls, fmt.Errorf("architect response not valid JSON after retry: %w", err2)
+		}
+		return result, calls, nil
 	}
-
-	return result, call, nil
 }
 
 func buildArchitectPrompt(input ArchitectInput) string {

@@ -84,12 +84,12 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 	var llmCalls []models.LLMCall
 	archModel := mcfg.ModelForRole("archivist", "gemini-2.5-flash")
 	llmClient := llm.NewClient(mcfg.Provider.BaseURL, mcfg.APIKey, archModel)
-	enhanced, llmCall, err := agents.EnhanceDossier(ctx, llmClient, archModel, task, dossier)
+	enhanced, archCalls, err := agents.EnhanceDossier(ctx, llmClient, archModel, task, dossier)
+	llmCalls = append(llmCalls, archCalls...)
 	if err != nil {
 		return nil, fmt.Errorf("archivist: %w", err)
 	}
 	dossier = enhanced
-	llmCalls = append(llmCalls, llmCall)
 	agentsInvoked = append(agentsInvoked, "archivist")
 
 	// --- 4. Triage re-check after archivist ---
@@ -289,11 +289,11 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 		FailedFiles:      failedFiles,
 	}
 
-	architectReview, archCall, err := agents.ArchitectReview(ctx, archReviewClient, archReviewModel, architectInput)
+	architectReview, archCalls, err := agents.ArchitectReview(ctx, archReviewClient, archReviewModel, architectInput)
+	llmCalls = append(llmCalls, archCalls...)
 	if err != nil {
 		return nil, fmt.Errorf("architect review: %w", err)
 	}
-	llmCalls = append(llmCalls, archCall)
 	agentsInvoked = append(agentsInvoked, "architect")
 
 	// --- 11. GitHub PR ---

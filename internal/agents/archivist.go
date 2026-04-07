@@ -33,22 +33,40 @@ type archivistResponse struct {
 }
 
 // EnhanceDossier uses an LLM to improve the keyword-based dossier.
-// On LLM failure or bad response, it returns the original dossier unchanged.
-func EnhanceDossier(ctx context.Context, client *llm.Client, modelName string, task models.Task, original models.Dossier) (models.Dossier, models.LLMCall, error) {
+// On LLM call failure it returns the original dossier. On JSON parse failure
+// it retries once with the parse error fed back to the model; if the retry
+// also fails, it falls back to the keyword dossier. Returns all LLM calls
+// made (1 or 2) so token/latency accounting is complete.
+func EnhanceDossier(ctx context.Context, client *llm.Client, modelName string, task models.Task, original models.Dossier) (models.Dossier, []models.LLMCall, error) {
 	userPrompt := buildArchivistPrompt(task, original)
 
 	response, call, err := callLLM(ctx, client, "archivist", modelName, archivistSystemPrompt, userPrompt)
+	calls := []models.LLMCall{call}
 	if err != nil {
 		log.Printf("archivist LLM call failed, using keyword dossier: %v", err)
-		return original, call, nil
+		return original, calls, nil
 	}
 
 	var parsed archivistResponse
 	cleaned := cleanJSONResponse(response)
 
-	if err := json.Unmarshal([]byte(cleaned), &parsed); err != nil {
-		log.Printf("archivist response not valid JSON, using keyword dossier: %v", err)
-		return original, call, nil
+	if parseErr := json.Unmarshal([]byte(cleaned), &parsed); parseErr != nil {
+		log.Printf("archivist response not valid JSON, retrying once: %v", parseErr)
+		retryPrompt := fmt.Sprintf(
+			"%s\n\n---\nYour previous response was not valid JSON. Parser error: %s\nReturn ONLY a valid JSON object matching the schema. Do not include markdown fences, code blocks, or any text outside the JSON. Ensure every backslash inside a string is either part of a valid escape (\\\", \\\\, \\/, \\b, \\f, \\n, \\r, \\t, \\uXXXX) or doubled.",
+			userPrompt, parseErr.Error(),
+		)
+		response2, call2, retryErr := callLLM(ctx, client, "archivist-retry", modelName, archivistSystemPrompt, retryPrompt)
+		calls = append(calls, call2)
+		if retryErr != nil {
+			log.Printf("archivist retry LLM call failed, using keyword dossier: %v", retryErr)
+			return original, calls, nil
+		}
+		cleaned2 := cleanJSONResponse(response2)
+		if parseErr2 := json.Unmarshal([]byte(cleaned2), &parsed); parseErr2 != nil {
+			log.Printf("archivist retry response still not valid JSON, using keyword dossier: %v", parseErr2)
+			return original, calls, nil
+		}
 	}
 
 	enhanced := models.Dossier{
@@ -80,7 +98,12 @@ func EnhanceDossier(ctx context.Context, client *llm.Client, modelName string, t
 		enhanced.OpenQuestions = original.OpenQuestions
 	}
 
-	return enhanced, call, nil
+	// Task-level verifier command override always wins, even over LLM suggestions.
+	if len(task.VerifierCommands) > 0 {
+		enhanced.LikelyCommands = append([]string(nil), task.VerifierCommands...)
+	}
+
+	return enhanced, calls, nil
 }
 
 func buildArchivistPrompt(task models.Task, dossier models.Dossier) string {

@@ -1,4 +1,4 @@
-.PHONY: build run-task index report test lint clean
+.PHONY: build run-task index report test lint clean triage
 
 BINARY := conduit-experiment
 
@@ -24,3 +24,6 @@ lint:
 
 clean:
 	rm -rf bin/
+
+triage:
+	go run ./cmd/triage console
