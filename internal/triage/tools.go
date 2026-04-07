@@ -60,7 +60,7 @@ func NewTools(adapter *github.Adapter, outputDir string) ([]tool.Tool, error) {
 
 	listTool, err := functiontool.New(functiontool.Config{
 		Name:        "list_issues",
-		Description: "List open GitHub issues for the target repository. Returns issue number, title, labels, body preview (first 500 chars), comment count, and assignee count. Use limit to control how many issues to fetch (default 50, max 200).",
+		Description: "List open GitHub issues for the target repository. Returns issue number, title, labels, body preview (first 500 chars), comment count, and assignee count. Use limit to control how many issues to fetch (default 30).",
 	}, func(ctx tool.Context, input ListIssuesInput) (ListIssuesOutput, error) {
 		issues, err := adapter.ListIssues(ctx, github.IssueListOpts{
 			Limit:  input.Limit,

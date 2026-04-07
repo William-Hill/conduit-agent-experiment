@@ -1,6 +1,6 @@
 # Experiment: Triage Agent Feasibility Test
 
-**Date:** 2026-04-06
+**Date:** 2026-04-06 (agent run crossed midnight UTC; output file dated 2026-04-07)
 **Author:** William Hill
 **Target:** ConduitIO/conduit
 

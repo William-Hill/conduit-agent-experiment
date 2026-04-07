@@ -35,10 +35,12 @@ gcloud scheduler jobs create http triage-weekly \
 ### Cost Estimate
 | Component | Monthly Cost |
 |-----------|-------------|
-| Gemini 2.5 Flash (4 runs × ~100K tokens) | $0.08 |
+| Gemini 2.5 Flash (4 runs × ~20K tokens each) | ~$0.02 |
 | Cloud Run (4 invocations × ~60s each) | Free tier |
 | Cloud Scheduler (1 job) | Free tier (3 free jobs) |
-| **Total** | **~$0.08/month** |
+| **Total** | **~$0.02/month** |
+
+Based on feasibility test: ~$0.004/run at current Gemini 2.5 Flash pricing.
 
 ## Consequences
 - Near-zero cost for weekly triage
