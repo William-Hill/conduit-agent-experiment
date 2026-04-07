@@ -69,13 +69,23 @@ func RunArchivist(ctx context.Context, geminiKey, repoDir, outputDir, issueTitle
 		return nil, fmt.Errorf("creating agent: %w", err)
 	}
 
+	ss := session.InMemoryService()
 	r, err := runner.New(runner.Config{
 		AppName:        "archivist",
 		Agent:          a,
-		SessionService: session.InMemoryService(),
+		SessionService: ss,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating runner: %w", err)
+	}
+
+	_, err = ss.Create(ctx, &session.CreateRequest{
+		AppName:   "archivist",
+		UserID:    "system",
+		SessionID: "archivist-run",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("creating session: %w", err)
 	}
 
 	prompt := fmt.Sprintf("## Issue: %s\n\n%s", issueTitle, issueBody)
