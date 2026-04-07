@@ -7,30 +7,30 @@ import (
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/archivist"
 )
 
 const systemPrompt = `You are an AI software engineer fixing a GitHub issue on a Go project.
 
-The repository has been cloned to your working directory. Use the provided tools to explore the codebase, implement the fix, and verify it compiles.
+The repository has been cloned to your working directory. A research archivist has already analyzed the issue and provided relevant files, a suggested approach, and identified risks. This context is included below the issue description.
 
 ## Workflow
-1. Read the issue description carefully.
-2. Use list_dir and search_files to understand the relevant code.
-3. Read the files you need to modify.
-4. Write your changes using write_file.
-5. Run "go build ./..." to verify the build passes.
-6. Run "go vet ./..." to check for issues.
-7. If there are relevant tests, run them with "go test ./path/to/package -v".
-8. If build or tests fail, read the errors, fix them, and retry.
-9. When done, run "git diff" to review your changes.
+1. Read the archivist's context carefully — it contains the relevant files and suggested approach.
+2. Implement the fix based on the suggested approach.
+3. Use write_file to make your changes.
+4. Run "go build ./..." to verify the build passes.
+5. Run "go vet ./..." to check for issues.
+6. If there are relevant tests, run them.
+7. If build or tests fail, read the errors, fix them, and retry.
+8. When done, run "git diff" to review your changes.
 
 ## Rules
 - Make minimal, focused changes. Do not refactor unrelated code.
 - Follow existing code patterns and conventions.
-- If you create new files, follow the package structure of nearby files.
 - Always verify your changes compile before finishing.
 - If tests fail because of your changes, fix them.
-- When done, state what you changed and why.`
+- When done, state what you changed and why.
+- You may use read_file, list_dir, search_files if you need additional context beyond what the archivist provided.`
 
 // Result holds the outcome of an implementer agent run.
 type Result struct {
@@ -39,7 +39,7 @@ type Result struct {
 }
 
 // RunAgent executes the implementer agent against a cloned repo.
-func RunAgent(ctx context.Context, apiKey, repoDir, issueTitle, issueBody string, maxIterations int) (*Result, error) {
+func RunAgent(ctx context.Context, apiKey, repoDir string, dossier *archivist.Dossier, issueTitle, issueBody string, maxIterations int) (*Result, error) {
 	client := anthropic.NewClient(option.WithAPIKey(apiKey))
 
 	tools, err := NewTools(repoDir)
@@ -47,7 +47,7 @@ func RunAgent(ctx context.Context, apiKey, repoDir, issueTitle, issueBody string
 		return nil, fmt.Errorf("creating tools: %w", err)
 	}
 
-	userPrompt := fmt.Sprintf("Fix this GitHub issue:\n\n## %s\n\n%s", issueTitle, issueBody)
+	userPrompt := buildPrompt(issueTitle, issueBody, dossier)
 
 	runner := client.Beta.Messages.NewToolRunner(tools, anthropic.BetaToolRunnerParams{
 		BetaMessageNewParams: anthropic.BetaMessageNewParams{
@@ -70,6 +70,32 @@ func RunAgent(ctx context.Context, apiKey, repoDir, issueTitle, issueBody string
 		Summary:    extractText(finalMsg),
 		Iterations: runner.IterationCount(),
 	}, nil
+}
+
+func buildPrompt(issueTitle, issueBody string, dossier *archivist.Dossier) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Fix this GitHub issue:\n\n## %s\n\n%s\n", issueTitle, issueBody)
+
+	if dossier != nil {
+		sb.WriteString("\n---\n\n## Archivist Research\n\n")
+		fmt.Fprintf(&sb, "### Summary\n%s\n\n", dossier.Summary)
+		fmt.Fprintf(&sb, "### Suggested Approach\n%s\n\n", dossier.Approach)
+
+		if len(dossier.Risks) > 0 {
+			sb.WriteString("### Risks\n")
+			for _, r := range dossier.Risks {
+				fmt.Fprintf(&sb, "- %s\n", r)
+			}
+			sb.WriteString("\n")
+		}
+
+		sb.WriteString("### Relevant Files\n\n")
+		for _, f := range dossier.Files {
+			fmt.Fprintf(&sb, "#### %s\n**Reason:** %s\n```\n%s\n```\n\n", f.Path, f.Reason, f.Content)
+		}
+	}
+
+	return sb.String()
 }
 
 // extractText pulls all text content from a BetaMessage.
