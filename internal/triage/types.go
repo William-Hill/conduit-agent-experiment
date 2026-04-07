@@ -40,6 +40,6 @@ type RankedIssue struct {
 type TriageOutput struct {
 	Timestamp   string        `json:"timestamp"`
 	Repo        string        `json:"repo"`
-	TotalIssues int           `json:"total_issues"`
+	RankedCount int           `json:"ranked_count"`
 	Ranked      []RankedIssue `json:"ranked"`
 }

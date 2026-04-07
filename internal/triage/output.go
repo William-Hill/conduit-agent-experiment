@@ -9,6 +9,7 @@ import (
 )
 
 // SaveRanking writes the triage output to a dated JSON file and returns the path.
+// Uses atomic write (temp file + rename) to avoid partial files on crash.
 func SaveRanking(dir string, output TriageOutput) (string, error) {
 	date := output.Timestamp
 	if i := strings.IndexByte(date, 'T'); i > 0 {
@@ -23,8 +24,24 @@ func SaveRanking(dir string, output TriageOutput) (string, error) {
 		return "", fmt.Errorf("marshaling triage output: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	tmp, err := os.CreateTemp(dir, ".triage-*.json")
+	if err != nil {
+		return "", fmt.Errorf("creating temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
 		return "", fmt.Errorf("writing triage output: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("closing temp file: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("renaming triage output: %w", err)
 	}
 
 	return path, nil

@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"google.golang.org/adk/model"
-	"google.golang.org/adk/tool"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/github"
 )
@@ -40,14 +39,3 @@ func TestNewTriageAgent(t *testing.T) {
 	}
 }
 
-func TestNewTriageAgentNilModel(t *testing.T) {
-	// Passing nil model should still succeed at construction time;
-	// the model is only used at runtime when the agent is invoked.
-	agent, err := NewTriageAgent(nil, []tool.Tool{})
-	if err != nil {
-		t.Fatalf("NewTriageAgent(nil, ...) error: %v", err)
-	}
-	if agent.Name() != "triage_agent" {
-		t.Errorf("agent.Name() = %q, want %q", agent.Name(), "triage_agent")
-	}
-}

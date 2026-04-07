@@ -13,7 +13,7 @@ func TestSaveRanking(t *testing.T) {
 	output := TriageOutput{
 		Timestamp:   "2026-04-06T12:00:00Z",
 		Repo:        "ConduitIO/conduit",
-		TotalIssues: 130,
+		RankedCount: 1,
 		Ranked: []RankedIssue{
 			{
 				Number:      576,

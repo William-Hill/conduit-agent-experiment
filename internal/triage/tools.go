@@ -1,7 +1,6 @@
 package triage
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -46,22 +45,25 @@ type SaveRankingOutput struct {
 	Count int    `json:"count"`
 }
 
+// labelNames extracts label name strings from github.Label slices.
+func labelNames(labels []github.Label) []string {
+	names := make([]string, len(labels))
+	for i, l := range labels {
+		names[i] = l.Name
+	}
+	return names
+}
+
 // NewTools creates the three function tools for the triage agent.
 func NewTools(adapter *github.Adapter, outputDir string) ([]tool.Tool, error) {
+	repo := adapter.Owner + "/" + adapter.Repo
+
 	listTool, err := functiontool.New(functiontool.Config{
 		Name:        "list_issues",
 		Description: "List open GitHub issues for the target repository. Returns issue number, title, labels, body preview (first 500 chars), comment count, and assignee count. Use limit to control how many issues to fetch (default 50, max 200).",
-	}, func(_ tool.Context, input ListIssuesInput) (ListIssuesOutput, error) {
-		limit := input.Limit
-		if limit <= 0 {
-			limit = 50
-		}
-		if limit > 200 {
-			limit = 200
-		}
-
-		issues, err := adapter.ListIssues(context.Background(), github.IssueListOpts{
-			Limit:  limit,
+	}, func(ctx tool.Context, input ListIssuesInput) (ListIssuesOutput, error) {
+		issues, err := adapter.ListIssues(ctx, github.IssueListOpts{
+			Limit:  input.Limit,
 			Labels: input.Labels,
 		})
 		if err != nil {
@@ -70,10 +72,6 @@ func NewTools(adapter *github.Adapter, outputDir string) ([]tool.Tool, error) {
 
 		infos := make([]IssueInfo, len(issues))
 		for i, iss := range issues {
-			labels := make([]string, len(iss.Labels))
-			for j, l := range iss.Labels {
-				labels[j] = l.Name
-			}
 			body := iss.Body
 			if len(body) > 500 {
 				body = body[:500] + "..."
@@ -81,7 +79,7 @@ func NewTools(adapter *github.Adapter, outputDir string) ([]tool.Tool, error) {
 			infos[i] = IssueInfo{
 				Number:     iss.Number,
 				Title:      iss.Title,
-				Labels:     labels,
+				Labels:     labelNames(iss.Labels),
 				BodyPrefix: body,
 				Comments:   len(iss.Comments),
 				Assignees:  len(iss.Assignees),
@@ -98,22 +96,17 @@ func NewTools(adapter *github.Adapter, outputDir string) ([]tool.Tool, error) {
 	getTool, err := functiontool.New(functiontool.Config{
 		Name:        "get_issue",
 		Description: "Get full details for a single GitHub issue by number. Returns the complete body, all labels, comment count, and assignee count. Use this to get more context on promising issues identified by list_issues.",
-	}, func(_ tool.Context, input GetIssueInput) (GetIssueOutput, error) {
-		issue, err := adapter.GetIssue(context.Background(), input.Number)
+	}, func(ctx tool.Context, input GetIssueInput) (GetIssueOutput, error) {
+		issue, err := adapter.GetIssue(ctx, input.Number)
 		if err != nil {
 			return GetIssueOutput{}, fmt.Errorf("getting issue %d: %w", input.Number, err)
-		}
-
-		labels := make([]string, len(issue.Labels))
-		for i, l := range issue.Labels {
-			labels[i] = l.Name
 		}
 
 		return GetIssueOutput{
 			Issue: IssueDetail{
 				Number:    issue.Number,
 				Title:     issue.Title,
-				Labels:    labels,
+				Labels:    labelNames(issue.Labels),
 				Body:      issue.Body,
 				Comments:  len(issue.Comments),
 				Assignees: len(issue.Assignees),
@@ -131,8 +124,8 @@ func NewTools(adapter *github.Adapter, outputDir string) ([]tool.Tool, error) {
 	}, func(_ tool.Context, input SaveRankingInput) (SaveRankingOutput, error) {
 		output := TriageOutput{
 			Timestamp:   time.Now().UTC().Format(time.RFC3339),
-			Repo:        adapter.Owner + "/" + adapter.Repo,
-			TotalIssues: len(input.Ranked),
+			Repo:        repo,
+			RankedCount: len(input.Ranked),
 			Ranked:      input.Ranked,
 		}
 
