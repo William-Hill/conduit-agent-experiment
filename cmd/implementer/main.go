@@ -98,10 +98,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("planner failed: %v", err)
 	}
-	log.Printf("Plan: %s (%d files to change)", plan.Summary, len(plan.Changes))
-	for _, c := range plan.Changes {
-		log.Printf("  - %s: %s", c.Path, c.Description)
+	// Show first 200 chars of plan
+	preview := plan.Markdown
+	if len(preview) > 200 {
+		preview = preview[:200] + "..."
 	}
+	log.Printf("Plan produced (%d chars): %s", len(plan.Markdown), preview)
 
 	// 6. Review plan (Gemini Flash — validates the plan)
 	log.Printf("Running reviewer agent...")
@@ -117,7 +119,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("planner retry failed: %v", err)
 		}
-		log.Printf("Revised plan: %s (%d files)", plan.Summary, len(plan.Changes))
+		log.Printf("Revised plan produced (%d chars)", len(plan.Markdown))
 	}
 	log.Printf("Plan approved")
 

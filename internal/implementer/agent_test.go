@@ -15,18 +15,14 @@ func TestExtractTextNil(t *testing.T) {
 
 func TestBuildPromptWithPlan(t *testing.T) {
 	p := &planner.ImplementationPlan{
-		Summary: "Add error codes to Swagger",
-		Changes: []planner.PlannedChange{
-			{Path: "pkg/api.go", Description: "Update error handling", Content: "package api\n"},
-		},
-		Verification: []string{"go build ./..."},
+		Markdown: "# Fix error codes\n\nChange `pkg/api.go` to return proper status codes.\n\n```go\npackage api\n```\n",
 	}
 	prompt := buildPrompt(p)
 	if !strings.Contains(prompt, "pkg/api.go") {
 		t.Error("missing file path")
 	}
 	if !strings.Contains(prompt, "package api") {
-		t.Error("missing file content")
+		t.Error("missing code content")
 	}
 }
 

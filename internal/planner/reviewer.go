@@ -14,17 +14,16 @@ const reviewerSystemPrompt = `You are a code review engineer. You receive a GitH
 
 Check:
 1. Does the plan address the issue?
-2. Are the file paths valid (they should match paths in the research context)?
+2. Are the file paths real (they should match paths in the research context)?
 3. Are the code changes syntactically correct Go?
 4. Are the changes minimal and focused?
 
 Output ONLY valid JSON:
-{
-  "approved": true/false,
-  "feedback": "explanation of issues found, or 'Plan looks good' if approved"
-}`
+{"approved": true, "feedback": "Plan looks good"}
+or
+{"approved": false, "feedback": "Issue: the plan modifies X but should modify Y..."}`
 
-// ReviewPlan calls Gemini to validate an implementation plan against the issue and dossier.
+// ReviewPlan validates an implementation plan against the issue and dossier.
 func ReviewPlan(ctx context.Context, geminiKey, issueTitle, issueBody string, dossier *archivist.Dossier, plan *ImplementationPlan) (*ReviewResult, error) {
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey: geminiKey,
@@ -56,7 +55,7 @@ func ReviewPlan(ctx context.Context, geminiKey, issueTitle, issueBody string, do
 
 	var result ReviewResult
 	if err := json.Unmarshal([]byte(cleanJSON(text)), &result); err != nil {
-		return nil, fmt.Errorf("parsing review JSON: %w (raw: %.200s)", err, text)
+		return nil, fmt.Errorf("parsing review JSON: %w", err)
 	}
 
 	return &result, nil
@@ -66,33 +65,13 @@ func buildReviewerPrompt(issueTitle, issueBody string, dossier *archivist.Dossie
 	var b strings.Builder
 	fmt.Fprintf(&b, "## Issue: %s\n\n%s\n\n", issueTitle, issueBody)
 	fmt.Fprintf(&b, "## Research Summary\n\n%s\n\n", dossier.Summary)
-	fmt.Fprintf(&b, "## Suggested Approach\n\n%s\n\n", dossier.Approach)
-
-	if len(dossier.Risks) > 0 {
-		b.WriteString("## Risks\n\n")
-		for _, r := range dossier.Risks {
-			fmt.Fprintf(&b, "- %s\n", r)
-		}
-		b.WriteString("\n")
-	}
 
 	b.WriteString("## Relevant Files\n\n")
 	for _, f := range dossier.Files {
-		fmt.Fprintf(&b, "### %s\n\nReason: %s\n\n```\n%s\n```\n\n", f.Path, f.Reason, f.Content)
+		fmt.Fprintf(&b, "- %s: %s\n", f.Path, f.Reason)
 	}
 
-	b.WriteString("## Implementation Plan\n\n")
-	fmt.Fprintf(&b, "Summary: %s\n\n", plan.Summary)
-	for _, c := range plan.Changes {
-		fmt.Fprintf(&b, "### %s\n\n%s\n\n```\n%s\n```\n\n", c.Path, c.Description, c.Content)
-	}
-
-	if len(plan.Verification) > 0 {
-		b.WriteString("## Verification Commands\n\n")
-		for _, v := range plan.Verification {
-			fmt.Fprintf(&b, "- `%s`\n", v)
-		}
-	}
+	fmt.Fprintf(&b, "\n## Implementation Plan\n\n%s\n", plan.Markdown)
 
 	return b.String()
 }

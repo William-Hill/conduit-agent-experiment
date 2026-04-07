@@ -1,17 +1,9 @@
 package planner
 
-// PlannedChange is a single file to write.
-type PlannedChange struct {
-	Path        string `json:"path"`
-	Description string `json:"description"`
-	Content     string `json:"content"` // complete file content
-}
-
-// ImplementationPlan is the planner's output.
+// ImplementationPlan is the planner's output — a markdown document
+// with detailed instructions for what code to write.
 type ImplementationPlan struct {
-	Summary      string          `json:"summary"`
-	Changes      []PlannedChange `json:"changes"`
-	Verification []string        `json:"verification"` // commands to run after writing
+	Markdown string
 }
 
 // ReviewResult is the reviewer's verdict.

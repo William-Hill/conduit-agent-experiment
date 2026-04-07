@@ -2,7 +2,6 @@ package planner
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -10,30 +9,20 @@ import (
 	"google.golang.org/genai"
 )
 
-const plannerSystemPrompt = `You are a senior Go engineer writing an implementation plan. You receive a GitHub issue and research context (relevant file contents). Your job is to write the EXACT new file contents for each file that needs to change.
+const plannerSystemPrompt = `You are a senior Go engineer writing an implementation plan. You receive a GitHub issue and research context (relevant file contents).
 
-Output ONLY valid JSON with this schema:
-{
-  "summary": "one-line description of what the plan does",
-  "changes": [
-    {
-      "path": "relative/path/to/file.go",
-      "description": "what changed and why",
-      "content": "complete new file content"
-    }
-  ],
-  "verification": ["go build ./...", "go vet ./..."]
-}
+Write a detailed markdown implementation document that a junior engineer can follow mechanically. For each file that needs to change:
 
-Rules:
-- Write COMPLETE file contents, not diffs. The implementer will overwrite the entire file.
-- Make minimal changes. Only modify what's needed to fix the issue.
-- Keep all existing code that doesn't need to change.
-- Follow the existing code style exactly.
-- Include relevant verification commands.`
+1. State the file path
+2. Show the EXACT code to write — complete functions, imports, or file sections
+3. Use Go code blocks for all code
+4. Explain what changed and why in one sentence
 
-// CreatePlan calls Gemini to produce an implementation plan with exact file contents.
-// Retries once on JSON parse failure with error feedback.
+End with a "## Verification" section listing commands to run.
+
+Be specific. Name functions, line numbers when relevant, exact import paths. The engineer should be able to copy-paste your code blocks.`
+
+// CreatePlan calls Gemini to produce a markdown implementation plan.
 func CreatePlan(ctx context.Context, geminiKey, issueTitle, issueBody string, dossier *archivist.Dossier) (*ImplementationPlan, error) {
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey: geminiKey,
@@ -43,43 +32,45 @@ func CreatePlan(ctx context.Context, geminiKey, issueTitle, issueBody string, do
 	}
 
 	prompt := buildPlannerPrompt(issueTitle, issueBody, dossier)
-	config := &genai.GenerateContentConfig{
+
+	resp, err := client.Models.GenerateContent(ctx, "gemini-2.5-flash", genai.Text(prompt), &genai.GenerateContentConfig{
 		SystemInstruction: genai.NewContentFromText(plannerSystemPrompt, "user"),
-		ResponseMIMEType:  "application/json",
 		MaxOutputTokens:   32000,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("generating plan: %w", err)
 	}
 
-	for attempt := range 2 {
-		resp, err := client.Models.GenerateContent(ctx, "gemini-2.5-flash", genai.Text(prompt), config)
-		if err != nil {
-			return nil, fmt.Errorf("generating plan: %w", err)
-		}
-
-		if len(resp.Candidates) == 0 || resp.Candidates[0].Content == nil {
-			return nil, fmt.Errorf("empty response from model")
-		}
-
-		var text string
-		for _, part := range resp.Candidates[0].Content.Parts {
-			if part.Text != "" {
-				text += part.Text
-			}
-		}
-
-		var plan ImplementationPlan
-		if err := json.Unmarshal([]byte(cleanJSON(text)), &plan); err != nil {
-			if attempt == 0 {
-				// Retry with error feedback
-				prompt += fmt.Sprintf("\n\nYour previous response had invalid JSON: %v\nPlease output ONLY valid JSON.", err)
-				continue
-			}
-			return nil, fmt.Errorf("parsing plan JSON after retry: %w", err)
-		}
-
-		return &plan, nil
+	if len(resp.Candidates) == 0 || resp.Candidates[0].Content == nil {
+		return nil, fmt.Errorf("empty response from model")
 	}
 
-	return nil, fmt.Errorf("unreachable")
+	var text string
+	for _, part := range resp.Candidates[0].Content.Parts {
+		if part.Text != "" {
+			text += part.Text
+		}
+	}
+
+	if strings.TrimSpace(text) == "" {
+		return nil, fmt.Errorf("empty plan text from model")
+	}
+
+	return &ImplementationPlan{Markdown: text}, nil
+}
+
+// cleanJSON strips markdown code fences from model output.
+func cleanJSON(s string) string {
+	s = strings.TrimSpace(s)
+	if strings.HasPrefix(s, "```") {
+		if idx := strings.Index(s, "\n"); idx != -1 {
+			s = s[idx+1:]
+		}
+		if idx := strings.LastIndex(s, "```"); idx != -1 {
+			s = s[:idx]
+		}
+	}
+	return strings.TrimSpace(s)
 }
 
 func buildPlannerPrompt(issueTitle, issueBody string, dossier *archivist.Dossier) string {
@@ -98,25 +89,8 @@ func buildPlannerPrompt(issueTitle, issueBody string, dossier *archivist.Dossier
 
 	b.WriteString("## Relevant Files\n\n")
 	for _, f := range dossier.Files {
-		fmt.Fprintf(&b, "### %s\n\nReason: %s\n\n```\n%s\n```\n\n", f.Path, f.Reason, f.Content)
+		fmt.Fprintf(&b, "### %s\n\nReason: %s\n\n```go\n%s\n```\n\n", f.Path, f.Reason, f.Content)
 	}
 
 	return b.String()
-}
-
-// cleanJSON strips markdown code fences and trims whitespace from model output.
-func cleanJSON(s string) string {
-	s = strings.TrimSpace(s)
-	// Strip ```json ... ``` fences
-	if strings.HasPrefix(s, "```") {
-		// Remove opening fence line
-		if idx := strings.Index(s, "\n"); idx != -1 {
-			s = s[idx+1:]
-		}
-		// Remove closing fence
-		if idx := strings.LastIndex(s, "```"); idx != -1 {
-			s = s[:idx]
-		}
-	}
-	return strings.TrimSpace(s)
 }

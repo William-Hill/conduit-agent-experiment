@@ -69,18 +69,14 @@ func TestBuildPlannerPrompt(t *testing.T) {
 
 func TestBuildReviewerPrompt(t *testing.T) {
 	plan := &ImplementationPlan{
-		Summary: "Fix the bug",
-		Changes: []PlannedChange{
-			{Path: "main.go", Description: "fix it", Content: "package main"},
-		},
-		Verification: []string{"go build ./..."},
+		Markdown: "# Fix the bug\n\nChange main.go to fix the nil check.",
 	}
 	prompt := buildReviewerPrompt("Fix bug", "The thing is broken", &dossierFixture, plan)
 	if !contains(prompt, "Implementation Plan") {
 		t.Error("reviewer prompt should contain plan section")
 	}
 	if !contains(prompt, "Fix the bug") {
-		t.Error("reviewer prompt should contain plan summary")
+		t.Error("reviewer prompt should contain plan content")
 	}
 }
 

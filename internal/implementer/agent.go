@@ -93,17 +93,7 @@ func buildPrompt(plan *planner.ImplementationPlan) string {
 	if plan == nil {
 		return ""
 	}
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "## Implementation Plan\n\n%s\n\n", plan.Summary)
-	sb.WriteString("## Files to Write\n\n")
-	for _, c := range plan.Changes {
-		fmt.Fprintf(&sb, "### %s\n%s\n```\n%s\n```\n\n", c.Path, c.Description, c.Content)
-	}
-	sb.WriteString("## Verification Commands\n")
-	for _, cmd := range plan.Verification {
-		fmt.Fprintf(&sb, "- %s\n", cmd)
-	}
-	return sb.String()
+	return plan.Markdown
 }
 
 // extractText pulls all text content from a BetaMessage.
