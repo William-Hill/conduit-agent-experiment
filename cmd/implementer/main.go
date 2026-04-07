@@ -36,10 +36,20 @@ func main() {
 	repo := envOrDefault("IMPL_REPO_NAME", "conduit")
 	forkOwner := envOrDefault("IMPL_FORK_OWNER", "William-Hill")
 	triageDir := envOrDefault("IMPL_TRIAGE_DIR", "data/tasks")
-	maxIter := 20
+	maxIter := 30
 
-	// 1. Read latest triage output, pick top issue
-	issue, err := readTopRankedIssue(triageDir)
+	// 1. Read triage output, pick issue (override with IMPL_ISSUE_NUMBER)
+	var (
+		issue *triage.RankedIssue
+		err   error
+	)
+	if numStr := os.Getenv("IMPL_ISSUE_NUMBER"); numStr != "" {
+		num := 0
+		fmt.Sscanf(numStr, "%d", &num)
+		issue, err = findIssueByNumber(triageDir, num)
+	} else {
+		issue, err = readTopRankedIssue(triageDir)
+	}
 	if err != nil {
 		log.Fatalf("reading triage output: %v", err)
 	}
@@ -150,6 +160,30 @@ func readTopRankedIssue(dir string) (*triage.RankedIssue, error) {
 	}
 
 	return &output.Ranked[0], nil
+}
+
+func findIssueByNumber(dir string, number int) (*triage.RankedIssue, error) {
+	files, err := filepath.Glob(filepath.Join(dir, "triage-*.json"))
+	if err != nil {
+		return nil, fmt.Errorf("globbing triage files: %w", err)
+	}
+	sort.Strings(files)
+	for i := len(files) - 1; i >= 0; i-- {
+		data, err := os.ReadFile(files[i])
+		if err != nil {
+			continue
+		}
+		var output triage.TriageOutput
+		if err := json.Unmarshal(data, &output); err != nil {
+			continue
+		}
+		for j := range output.Ranked {
+			if output.Ranked[j].Number == number {
+				return &output.Ranked[j], nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("issue #%d not found in triage files in %s", number, dir)
 }
 
 func cloneRepo(ctx context.Context, owner, repo string) (string, error) {
