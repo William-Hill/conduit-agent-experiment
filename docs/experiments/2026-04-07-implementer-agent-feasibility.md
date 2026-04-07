@@ -48,9 +48,42 @@ Using Claude Sonnet 4.6 ($3/$15 per MTok):
 - 10-15 iterations typical: ~$0.15-0.30 per implementation run
 - With Haiku 4.5 ($1/$5): ~$0.05-0.10 per run
 
+## Live Run: Issue #576 (Error codes in Swagger)
+
+After adding credits and iterating on the pipeline, a successful end-to-end run was completed.
+
+### Pipeline
+```
+triage (Gemini Flash) → archivist (Gemini Flash, single call) → planner (Gemini Flash, markdown) → reviewer (Gemini Flash, JSON) → implementer (Haiku 4.5, 15 iterations)
+```
+
+### Results
+
+| Step | Time | Detail |
+|------|------|--------|
+| Archivist | 21s | Found 7 relevant files via grep + single Gemini call |
+| Planner | 64s | Produced 29K char markdown implementation plan |
+| Reviewer | 19s | Approved the plan |
+| Implementer | 62s | 15 iterations: 4 write_file, 2 run_command, 9 read/search |
+| **Total** | **~3 min** | **Draft PR created** |
+
+### Output
+- **PR:** https://github.com/ConduitIO/conduit/pull/2451
+- **Files changed:** 3 (status.go, errors.go, service.go)
+- **Lines changed:** +73 / -39
+- **Estimated cost:** ~$0.06 total (~$0.005 Gemini Flash + ~$0.05 Haiku)
+
+### Key Learnings
+
+1. **Gemini Flash cannot reliably follow tool-calling instructions** — the ADK Go agent loop failed repeatedly (archivist never called save_dossier). Replacing with deterministic Go code (grep) + single LLM call was the fix.
+2. **JSON output with code content is unreliable** — even with Gemini's JSON mode, Go source code breaks JSON encoding. Markdown is the right format for plans containing code.
+3. **Haiku needs extremely aggressive prompts** — without explicit "write by iteration 3" instructions, it explores endlessly even with pre-provided context.
+4. **The archivist→planner→reviewer→implementer pipeline works** — cheap Gemini Flash does all the thinking ($0.005), expensive Anthropic does the mechanical writing ($0.05).
+5. **Prompt caching on the implementer is critical** — the plan + system prompt are marked cacheable, so subsequent iterations cost 10% of input price.
+
 ## Next Steps
 
-1. Add Anthropic credits and re-run the full integration test
-2. Test against issue #1268 (docs — embedding guide) and #576 (Swagger error codes)
-3. Evaluate output quality and iteration efficiency
-4. Consider adding `maxBudgetUsd` parameter to cap cost per run
+1. Evaluate the quality of PR #2451 against the actual issue requirements
+2. Test against more issues (different categories, difficulties)
+3. Add cost tracking (token usage per step)
+4. Consider Sonnet for the implementer when Haiku's output quality is insufficient
