@@ -22,7 +22,10 @@ func main() {
 
 	apiKey := os.Getenv("GOOGLE_API_KEY")
 	if apiKey == "" {
-		log.Fatal("GOOGLE_API_KEY environment variable is required")
+		apiKey = os.Getenv("GEMINI_API_KEY")
+	}
+	if apiKey == "" {
+		log.Fatal("GOOGLE_API_KEY or GEMINI_API_KEY environment variable is required")
 	}
 
 	owner := envOrDefault("TRIAGE_REPO_OWNER", "ConduitIO")
