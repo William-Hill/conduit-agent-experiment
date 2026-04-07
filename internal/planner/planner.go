@@ -33,6 +33,7 @@ Rules:
 - Include relevant verification commands.`
 
 // CreatePlan calls Gemini to produce an implementation plan with exact file contents.
+// Retries once on JSON parse failure with error feedback.
 func CreatePlan(ctx context.Context, geminiKey, issueTitle, issueBody string, dossier *archivist.Dossier) (*ImplementationPlan, error) {
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey: geminiKey,
@@ -42,26 +43,43 @@ func CreatePlan(ctx context.Context, geminiKey, issueTitle, issueBody string, do
 	}
 
 	prompt := buildPlannerPrompt(issueTitle, issueBody, dossier)
-
-	resp, err := client.Models.GenerateContent(ctx, "gemini-2.5-flash", genai.Text(prompt), &genai.GenerateContentConfig{
+	config := &genai.GenerateContentConfig{
 		SystemInstruction: genai.NewContentFromText(plannerSystemPrompt, "user"),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("generating plan: %w", err)
+		ResponseMIMEType:  "application/json",
+		MaxOutputTokens:   32000,
 	}
 
-	if len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
-		return nil, fmt.Errorf("empty response from model")
+	for attempt := range 2 {
+		resp, err := client.Models.GenerateContent(ctx, "gemini-2.5-flash", genai.Text(prompt), config)
+		if err != nil {
+			return nil, fmt.Errorf("generating plan: %w", err)
+		}
+
+		if len(resp.Candidates) == 0 || resp.Candidates[0].Content == nil {
+			return nil, fmt.Errorf("empty response from model")
+		}
+
+		var text string
+		for _, part := range resp.Candidates[0].Content.Parts {
+			if part.Text != "" {
+				text += part.Text
+			}
+		}
+
+		var plan ImplementationPlan
+		if err := json.Unmarshal([]byte(cleanJSON(text)), &plan); err != nil {
+			if attempt == 0 {
+				// Retry with error feedback
+				prompt += fmt.Sprintf("\n\nYour previous response had invalid JSON: %v\nPlease output ONLY valid JSON.", err)
+				continue
+			}
+			return nil, fmt.Errorf("parsing plan JSON after retry: %w", err)
+		}
+
+		return &plan, nil
 	}
 
-	text := resp.Candidates[0].Content.Parts[0].Text
-
-	var plan ImplementationPlan
-	if err := json.Unmarshal([]byte(cleanJSON(text)), &plan); err != nil {
-		return nil, fmt.Errorf("parsing plan JSON: %w (raw: %.200s)", err, text)
-	}
-
-	return &plan, nil
+	return nil, fmt.Errorf("unreachable")
 }
 
 func buildPlannerPrompt(issueTitle, issueBody string, dossier *archivist.Dossier) string {

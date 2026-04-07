@@ -37,16 +37,22 @@ func ReviewPlan(ctx context.Context, geminiKey, issueTitle, issueBody string, do
 
 	resp, err := client.Models.GenerateContent(ctx, "gemini-2.5-flash", genai.Text(prompt), &genai.GenerateContentConfig{
 		SystemInstruction: genai.NewContentFromText(reviewerSystemPrompt, "user"),
+		ResponseMIMEType:  "application/json",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("generating review: %w", err)
 	}
 
-	if len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
+	if len(resp.Candidates) == 0 || resp.Candidates[0].Content == nil {
 		return nil, fmt.Errorf("empty response from model")
 	}
 
-	text := resp.Candidates[0].Content.Parts[0].Text
+	var text string
+	for _, part := range resp.Candidates[0].Content.Parts {
+		if part.Text != "" {
+			text += part.Text
+		}
+	}
 
 	var result ReviewResult
 	if err := json.Unmarshal([]byte(cleanJSON(text)), &result); err != nil {
