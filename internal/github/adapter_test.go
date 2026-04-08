@@ -223,6 +223,133 @@ func TestCreateBranchAndPush(t *testing.T) {
 	}
 }
 
+func TestAddLabel(t *testing.T) {
+	script := `#!/bin/sh
+args="$*"
+case "$args" in
+  *"issue edit"*"--add-label"*"agent:candidate"*)
+    echo ""
+    ;;
+  *)
+    echo "unexpected args: $args" >&2
+    exit 1
+    ;;
+esac
+`
+	_, scriptPath := writeMockScript(t, script)
+
+	a := &Adapter{
+		Owner:  "testowner",
+		Repo:   "testrepo",
+		GHPath: scriptPath,
+	}
+
+	if err := a.AddLabel(context.Background(), 42, "agent:candidate"); err != nil {
+		t.Fatalf("AddLabel() error: %v", err)
+	}
+}
+
+func TestRemoveLabel(t *testing.T) {
+	script := `#!/bin/sh
+args="$*"
+case "$args" in
+  *"issue edit"*"--remove-label"*"agent:candidate"*)
+    echo ""
+    ;;
+  *)
+    echo "unexpected args: $args" >&2
+    exit 1
+    ;;
+esac
+`
+	_, scriptPath := writeMockScript(t, script)
+
+	a := &Adapter{
+		Owner:  "testowner",
+		Repo:   "testrepo",
+		GHPath: scriptPath,
+	}
+
+	if err := a.RemoveLabel(context.Background(), 42, "agent:candidate"); err != nil {
+		t.Fatalf("RemoveLabel() error: %v", err)
+	}
+}
+
+func TestGetLabels(t *testing.T) {
+	mockOutput := `[{"name":"bug"},{"name":"agent:candidate"}]`
+	_, scriptPath := writeMockScript(t, "#!/bin/sh\necho '"+mockOutput+"'\n")
+
+	a := &Adapter{
+		Owner:  "testowner",
+		Repo:   "testrepo",
+		GHPath: scriptPath,
+	}
+
+	labels, err := a.GetLabels(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("GetLabels() error: %v", err)
+	}
+
+	if len(labels) != 2 {
+		t.Fatalf("expected 2 labels, got %d", len(labels))
+	}
+	if labels[1] != "agent:candidate" {
+		t.Errorf("labels[1] = %q, want %q", labels[1], "agent:candidate")
+	}
+}
+
+func TestPostComment(t *testing.T) {
+	script := `#!/bin/sh
+args="$*"
+case "$args" in
+  *"issue comment"*"--body"*)
+    echo "https://github.com/testowner/testrepo/issues/42#issuecomment-123"
+    ;;
+  *)
+    echo "unexpected args: $args" >&2
+    exit 1
+    ;;
+esac
+`
+	_, scriptPath := writeMockScript(t, script)
+
+	a := &Adapter{
+		Owner:  "testowner",
+		Repo:   "testrepo",
+		GHPath: scriptPath,
+	}
+
+	if err := a.PostComment(context.Background(), 42, "Hello world"); err != nil {
+		t.Fatalf("PostComment() error: %v", err)
+	}
+}
+
+func TestGetPRState(t *testing.T) {
+	mockOutput := `{"state":"OPEN","isDraft":true,"reviewDecision":"REVIEW_REQUIRED"}`
+	_, scriptPath := writeMockScript(t, "#!/bin/sh\necho '"+mockOutput+"'\n")
+
+	a := &Adapter{
+		Owner:  "testowner",
+		Repo:   "testrepo",
+		GHPath: scriptPath,
+	}
+
+	state, err := a.GetPRState(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("GetPRState() error: %v", err)
+	}
+
+	if state.State != "OPEN" {
+		t.Errorf("State = %q, want %q", state.State, "OPEN")
+	}
+	if !state.IsDraft {
+		t.Error("IsDraft should be true")
+	}
+	if state.ReviewDecision != "REVIEW_REQUIRED" {
+		t.Errorf("ReviewDecision = %q, want %q", state.ReviewDecision, "REVIEW_REQUIRED")
+	}
+}
+
 func TestCreateBranchAndPush_ForkRemote(t *testing.T) {
 	// Set up a real git repo in a temp dir
 	repoDir := t.TempDir()

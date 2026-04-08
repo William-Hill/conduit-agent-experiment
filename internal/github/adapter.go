@@ -173,6 +173,104 @@ func (a *Adapter) CreateDraftPR(ctx context.Context, input DraftPRInput) (string
 	return strings.TrimSpace(out), nil
 }
 
+// PRState represents the current state of a pull request.
+type PRState struct {
+	State          string `json:"state"`          // OPEN, CLOSED, MERGED
+	IsDraft        bool   `json:"isDraft"`
+	ReviewDecision string `json:"reviewDecision"` // APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED
+}
+
+// AddLabel adds a label to an issue or PR.
+func (a *Adapter) AddLabel(ctx context.Context, number int, label string) error {
+	args := []string{
+		"issue", "edit",
+		fmt.Sprintf("%d", number),
+		"--repo", a.repo(),
+		"--add-label", label,
+	}
+	_, err := a.runGH(ctx, args...)
+	if err != nil {
+		return fmt.Errorf("gh issue edit --add-label: %w", err)
+	}
+	return nil
+}
+
+// RemoveLabel removes a label from an issue or PR.
+func (a *Adapter) RemoveLabel(ctx context.Context, number int, label string) error {
+	args := []string{
+		"issue", "edit",
+		fmt.Sprintf("%d", number),
+		"--repo", a.repo(),
+		"--remove-label", label,
+	}
+	_, err := a.runGH(ctx, args...)
+	if err != nil {
+		return fmt.Errorf("gh issue edit --remove-label: %w", err)
+	}
+	return nil
+}
+
+// GetLabels returns the label names on an issue or PR.
+func (a *Adapter) GetLabels(ctx context.Context, number int) ([]string, error) {
+	args := []string{
+		"issue", "view",
+		fmt.Sprintf("%d", number),
+		"--repo", a.repo(),
+		"--json", "labels",
+		"--jq", ".labels",
+	}
+	out, err := a.runGH(ctx, args...)
+	if err != nil {
+		return nil, fmt.Errorf("gh issue view labels: %w", err)
+	}
+
+	var labels []Label
+	if err := json.Unmarshal([]byte(out), &labels); err != nil {
+		return nil, fmt.Errorf("parsing labels: %w", err)
+	}
+
+	names := make([]string, len(labels))
+	for i, l := range labels {
+		names[i] = l.Name
+	}
+	return names, nil
+}
+
+// PostComment posts a comment on an issue or PR.
+func (a *Adapter) PostComment(ctx context.Context, number int, body string) error {
+	args := []string{
+		"issue", "comment",
+		fmt.Sprintf("%d", number),
+		"--repo", a.repo(),
+		"--body", body,
+	}
+	_, err := a.runGH(ctx, args...)
+	if err != nil {
+		return fmt.Errorf("gh issue comment: %w", err)
+	}
+	return nil
+}
+
+// GetPRState returns the current state of a pull request.
+func (a *Adapter) GetPRState(ctx context.Context, prNumber int) (*PRState, error) {
+	args := []string{
+		"pr", "view",
+		fmt.Sprintf("%d", prNumber),
+		"--repo", a.repo(),
+		"--json", "state,isDraft,reviewDecision",
+	}
+	out, err := a.runGH(ctx, args...)
+	if err != nil {
+		return nil, fmt.Errorf("gh pr view: %w", err)
+	}
+
+	var state PRState
+	if err := json.Unmarshal([]byte(out), &state); err != nil {
+		return nil, fmt.Errorf("parsing PR state: %w", err)
+	}
+	return &state, nil
+}
+
 // runGH executes a gh command and returns stdout output.
 func (a *Adapter) runGH(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, a.ghPath(), args...)
