@@ -2,9 +2,13 @@ package cost
 
 import (
 	"log"
+	"sync"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/models"
 )
+
+// warnedModels tracks which unknown models have already been warned about.
+var warnedModels sync.Map
 
 // Price holds per-million-token pricing for a model.
 type Price struct {
@@ -27,7 +31,9 @@ var fallbackPrice = Price{InputPerMTok: 3.00, OutputPerMTok: 15.00}
 func Calculate(model string, inputTokens, outputTokens int) float64 {
 	price, ok := modelPrices[model]
 	if !ok {
-		log.Printf("cost: unknown model %q, using fallback pricing", model)
+		if _, seen := warnedModels.LoadOrStore(model, true); !seen {
+			log.Printf("cost: unknown model %q, using fallback pricing", model)
+		}
 		price = fallbackPrice
 	}
 	inputCost := float64(inputTokens) / 1_000_000 * price.InputPerMTok

@@ -18,14 +18,14 @@ func LoadBudget() Budget {
 	b := Budget{
 		StepCaps: make(map[string]float64),
 	}
-	b.PipelineCap = envFloat("PIPELINE_MAX_COST")
-	if v := envFloat("ARCHIVIST_MAX_COST"); v > 0 {
+	b.PipelineCap = EnvFloat("PIPELINE_MAX_COST")
+	if v := EnvFloat("ARCHIVIST_MAX_COST"); v > 0 {
 		b.StepCaps["archivist"] = v
 	}
-	if v := envFloat("PLANNER_MAX_COST"); v > 0 {
+	if v := EnvFloat("PLANNER_MAX_COST"); v > 0 {
 		b.StepCaps["planner"] = v
 	}
-	if v := envFloat("IMPL_MAX_COST"); v > 0 {
+	if v := EnvFloat("IMPL_MAX_COST"); v > 0 {
 		b.StepCaps["implementer"] = v
 	}
 	return b
@@ -60,7 +60,9 @@ func (b Budget) CheckTotal(calls []models.LLMCall) error {
 	return nil
 }
 
-func envFloat(key string) float64 {
+// EnvFloat reads a float64 from the named environment variable.
+// Returns 0 if the variable is unset or not a valid float.
+func EnvFloat(key string) float64 {
 	s := os.Getenv(key)
 	if s == "" {
 		return 0

@@ -60,10 +60,12 @@ func WriteCostReport(dir string, calls []models.LLMCall, budget Budget) error {
 
 	var steps []StepCost
 	var totalInput, totalOutput int
+	var totalCost float64
 	for _, step := range stepOrder {
 		acc := byStep[step]
 		totalInput += acc.inputTokens
 		totalOutput += acc.outputTokens
+		totalCost += acc.costUSD
 		steps = append(steps, StepCost{
 			Step:         step,
 			Model:        acc.model,
@@ -73,8 +75,6 @@ func WriteCostReport(dir string, calls []models.LLMCall, budget Budget) error {
 			Calls:        acc.calls,
 		})
 	}
-
-	totalCost := CalculateCalls(calls)
 	exceeded := budget.PipelineCap > 0 && totalCost > budget.PipelineCap
 
 	report := CostReport{

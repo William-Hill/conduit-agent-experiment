@@ -12,6 +12,7 @@ import (
 	"strconv"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/archivist"
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/cost"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/github"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/implementer"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/planner"
@@ -136,7 +137,7 @@ func main() {
 
 	// 7. Run implementer agent
 	log.Printf("Running implementer agent (max %d iterations)...", maxIter)
-	implMaxCost := envFloatOrDefault("IMPL_MAX_COST", 0)
+	implMaxCost := cost.EnvFloat("IMPL_MAX_COST")
 	result, err := implementer.RunAgent(ctx, anthropicKey, modelName, repoDir, plan, maxIter, implMaxCost)
 	if err != nil {
 		log.Fatalf("agent failed: %v", err)
@@ -202,17 +203,6 @@ func envOrDefault(key, fallback string) string {
 	return fallback
 }
 
-func envFloatOrDefault(key string, fallback float64) float64 {
-	s := os.Getenv(key)
-	if s == "" {
-		return fallback
-	}
-	v, err := strconv.ParseFloat(s, 64)
-	if err != nil {
-		return fallback
-	}
-	return v
-}
 
 func readTopRankedIssue(dir string) (*triage.RankedIssue, error) {
 	files, err := filepath.Glob(filepath.Join(dir, "triage-*.json"))
