@@ -173,6 +173,191 @@ func (a *Adapter) CreateDraftPR(ctx context.Context, input DraftPRInput) (string
 	return strings.TrimSpace(out), nil
 }
 
+// PRState represents the current state of a pull request.
+type PRState struct {
+	State          string `json:"state"`          // OPEN, CLOSED, MERGED
+	IsDraft        bool   `json:"isDraft"`
+	ReviewDecision string `json:"reviewDecision"` // APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED
+}
+
+// AddLabel adds a label to an issue or PR.
+func (a *Adapter) AddLabel(ctx context.Context, number int, label string) error {
+	args := []string{
+		"issue", "edit",
+		fmt.Sprintf("%d", number),
+		"--repo", a.repo(),
+		"--add-label", label,
+	}
+	_, err := a.runGH(ctx, args...)
+	if err != nil {
+		return fmt.Errorf("gh issue edit --add-label: %w", err)
+	}
+	return nil
+}
+
+// RemoveLabel removes a label from an issue or PR.
+func (a *Adapter) RemoveLabel(ctx context.Context, number int, label string) error {
+	args := []string{
+		"issue", "edit",
+		fmt.Sprintf("%d", number),
+		"--repo", a.repo(),
+		"--remove-label", label,
+	}
+	_, err := a.runGH(ctx, args...)
+	if err != nil {
+		return fmt.Errorf("gh issue edit --remove-label: %w", err)
+	}
+	return nil
+}
+
+// GetLabels returns the label names on an issue or PR.
+func (a *Adapter) GetLabels(ctx context.Context, number int) ([]string, error) {
+	args := []string{
+		"issue", "view",
+		fmt.Sprintf("%d", number),
+		"--repo", a.repo(),
+		"--json", "labels",
+		"--jq", ".labels",
+	}
+	out, err := a.runGH(ctx, args...)
+	if err != nil {
+		return nil, fmt.Errorf("gh issue view labels: %w", err)
+	}
+
+	var labels []Label
+	if err := json.Unmarshal([]byte(out), &labels); err != nil {
+		return nil, fmt.Errorf("parsing labels: %w", err)
+	}
+
+	names := make([]string, len(labels))
+	for i, l := range labels {
+		names[i] = l.Name
+	}
+	return names, nil
+}
+
+// PostComment posts a comment on an issue or PR.
+func (a *Adapter) PostComment(ctx context.Context, number int, body string) error {
+	args := []string{
+		"issue", "comment",
+		fmt.Sprintf("%d", number),
+		"--repo", a.repo(),
+		"--body", body,
+	}
+	_, err := a.runGH(ctx, args...)
+	if err != nil {
+		return fmt.Errorf("gh issue comment: %w", err)
+	}
+	return nil
+}
+
+// GetPRState returns the current state of a pull request.
+func (a *Adapter) GetPRState(ctx context.Context, prNumber int) (*PRState, error) {
+	args := []string{
+		"pr", "view",
+		fmt.Sprintf("%d", prNumber),
+		"--repo", a.repo(),
+		"--json", "state,isDraft,reviewDecision",
+	}
+	out, err := a.runGH(ctx, args...)
+	if err != nil {
+		return nil, fmt.Errorf("gh pr view: %w", err)
+	}
+
+	var state PRState
+	if err := json.Unmarshal([]byte(out), &state); err != nil {
+		return nil, fmt.Errorf("parsing PR state: %w", err)
+	}
+	return &state, nil
+}
+
+// ReviewThread represents a review thread on a PR.
+type ReviewThread struct {
+	ID         string `json:"id"`
+	IsResolved bool   `json:"isResolved"`
+	Body       string // first comment body
+}
+
+// reviewThreadsResponse is the GraphQL response for review threads.
+type reviewThreadsResponse struct {
+	Data struct {
+		Repository struct {
+			PullRequest struct {
+				ReviewThreads struct {
+					Nodes []struct {
+						ID         string `json:"id"`
+						IsResolved bool   `json:"isResolved"`
+						Comments   struct {
+							Nodes []struct {
+								Body string `json:"body"`
+							} `json:"nodes"`
+						} `json:"comments"`
+					} `json:"nodes"`
+				} `json:"reviewThreads"`
+			} `json:"pullRequest"`
+		} `json:"repository"`
+	} `json:"data"`
+}
+
+// GetReviewThreads returns all review threads on a PR using the GraphQL API.
+func (a *Adapter) GetReviewThreads(ctx context.Context, prNumber int) ([]ReviewThread, error) {
+	query := fmt.Sprintf(`query {
+		repository(owner: %q, name: %q) {
+			pullRequest(number: %d) {
+				reviewThreads(first: 100) {
+					nodes {
+						id
+						isResolved
+						comments(first: 1) {
+							nodes { body }
+						}
+					}
+				}
+			}
+		}
+	}`, a.Owner, a.Repo, prNumber)
+
+	out, err := a.runGH(ctx, "api", "graphql", "-f", "query="+query)
+	if err != nil {
+		return nil, fmt.Errorf("gh api graphql (review threads): %w", err)
+	}
+
+	var resp reviewThreadsResponse
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		return nil, fmt.Errorf("parsing review threads: %w", err)
+	}
+
+	nodes := resp.Data.Repository.PullRequest.ReviewThreads.Nodes
+	threads := make([]ReviewThread, len(nodes))
+	for i, n := range nodes {
+		body := ""
+		if len(n.Comments.Nodes) > 0 {
+			body = n.Comments.Nodes[0].Body
+		}
+		threads[i] = ReviewThread{
+			ID:         n.ID,
+			IsResolved: n.IsResolved,
+			Body:       body,
+		}
+	}
+	return threads, nil
+}
+
+// ResolveThread resolves a review thread by its node ID using the GraphQL API.
+func (a *Adapter) ResolveThread(ctx context.Context, threadID string) error {
+	mutation := fmt.Sprintf(`mutation {
+		resolveReviewThread(input: {threadId: %q}) {
+			thread { id }
+		}
+	}`, threadID)
+
+	_, err := a.runGH(ctx, "api", "graphql", "-f", "query="+mutation)
+	if err != nil {
+		return fmt.Errorf("gh api graphql (resolve thread): %w", err)
+	}
+	return nil
+}
+
 // runGH executes a gh command and returns stdout output.
 func (a *Adapter) runGH(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, a.ghPath(), args...)

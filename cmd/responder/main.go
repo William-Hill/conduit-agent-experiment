@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/github"
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/hitl"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/implementer"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/planner"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/responder"
@@ -47,6 +48,8 @@ func main() {
 		ForkOwner:  forkOwner,
 		BaseBranch: "main",
 	}
+	hitlCfg := hitl.LoadConfig()
+	hitlAdapter := &github.HITLAdapter{Adapter: adapter}
 
 	for iteration := 1; iteration <= maxIterations; iteration++ {
 		log.Printf("=== Responder iteration %d/%d ===", iteration, maxIterations)
@@ -136,6 +139,24 @@ func main() {
 			continue
 		}
 		log.Printf("Pushed iteration %d", iteration)
+
+		if hitlCfg.ResolveBotComments {
+			resolved, resolveErr := hitl.ResolveAllThreads(ctx, hitlAdapter, prNum)
+			if resolveErr != nil {
+				log.Printf("Warning: failed to resolve threads: %v", resolveErr)
+			} else if resolved > 0 {
+				log.Printf("Resolved %d review threads", resolved)
+			}
+		}
+
+		if len(hitlCfg.BotReviewers) > 0 {
+			if triggerErr := hitl.TriggerBotReviews(ctx, hitlAdapter, prNum, hitlCfg.BotReviewers); triggerErr != nil {
+				log.Printf("Warning: failed to re-trigger bot reviews: %v", triggerErr)
+			} else {
+				log.Printf("Re-triggered bot reviews")
+			}
+		}
+
 		os.RemoveAll(repoDir)
 
 		if iteration < maxIterations {
