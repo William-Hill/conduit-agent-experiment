@@ -71,8 +71,8 @@ New file `internal/cost/budget.go`:
 `Budget` struct reads caps from environment variables:
 - `PIPELINE_MAX_COST` — total pipeline cap (default: no limit)
 - `ARCHIVIST_MAX_COST` — archivist step cap
-- `PLANNER_MAX_COST` — planner step cap
 - `IMPL_MAX_COST` — implementer step cap
+- `ARCHITECT_MAX_COST` — architect step cap
 
 Methods:
 - `CheckStep(step string, calls []models.LLMCall) error` — checks if a step exceeded its cap
@@ -130,8 +130,8 @@ Cost: $0.0042 (3 LLM calls, 15700 tokens) — budget: $0.50 remaining
 - `internal/cost/pricing.go` — new: pricing constants and `Calculate`/`CalculateCalls`
 - `internal/cost/budget.go` — new: budget caps from env vars, check methods
 - `internal/cost/report.go` — new: `WriteCostReport` for cost.json artifact
-- `internal/orchestrator/workflow.go` — budget checks after each step, write cost report
-- `cmd/experiment/main.go` — cost summary in CLI output
+- `internal/orchestrator/workflow.go` — budget checks after each step
+- `cmd/experiment/main.go` — write cost report artifact, cost summary in CLI output
 - Tests for new `cost` package
 
 ## Acceptance Criteria Mapping

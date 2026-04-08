@@ -6,7 +6,7 @@ This document traces the full arc of the conduit-agent-experiment project -- wha
 
 Open source projects often lose maintainer bandwidth over time. ConduitIO/conduit, a streaming data platform, saw its commit velocity drop from ~36 commits/month during its active period to ~8 commits/month, while 130+ issues remained open. We hypothesized that a multi-agent AI system could help sustain that velocity -- not by replacing maintainers, but by autonomously handling the low-risk, well-scoped issues that pile up when humans get busy.
 
-The experiment is also material for an [OSA Community talk](docs/design.md) on whether AI can extend the "maintenance half-life" of open source software.
+The experiment is also material for an [OSA Community talk](design.md) on whether AI can extend the "maintenance half-life" of open source software.
 
 ## Milestones
 
