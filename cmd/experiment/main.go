@@ -11,6 +11,7 @@ import (
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/agents"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/config"
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/cost"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/evaluation"
 	ghub "github.com/mjhilldigital/conduit-agent-experiment/internal/github"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/ingest"
@@ -128,6 +129,9 @@ func newRunCmd() *cobra.Command {
 			if err := evaluation.WriteEvaluationJSON(outDir, result.Evaluation); err != nil {
 				return fmt.Errorf("writing evaluation JSON: %w", err)
 			}
+			if err := cost.WriteCostReport(outDir, result.LLMCalls, result.Budget); err != nil {
+				return fmt.Errorf("writing cost report: %w", err)
+			}
 
 			md, err := reporting.RenderMarkdown(result.Run, result.Dossier, result.Task)
 			if err != nil {
@@ -145,6 +149,15 @@ func newRunCmd() *cobra.Command {
 			if result.PRURL != "" {
 				fmt.Printf("PR: %s\n", result.PRURL)
 			}
+
+			totalCost := cost.CalculateCalls(result.LLMCalls)
+			totalTokens := cost.TotalTokens(result.LLMCalls)
+			costLine := fmt.Sprintf("Cost: $%.4f (%d LLM calls, %d tokens)", totalCost, len(result.LLMCalls), totalTokens)
+			if result.Budget.PipelineCap > 0 {
+				remaining := result.Budget.PipelineCap - totalCost
+				costLine += fmt.Sprintf(" — budget: $%.2f remaining", remaining)
+			}
+			fmt.Println(costLine)
 
 			return nil
 		},
