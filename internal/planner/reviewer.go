@@ -36,7 +36,7 @@ func ReviewPlan(ctx context.Context, geminiKey, issueTitle, issueBody string, do
 	prompt := buildReviewerPrompt(issueTitle, issueBody, dossier, plan)
 
 	resp, err := client.Models.GenerateContent(ctx, "gemini-2.5-flash", genai.Text(prompt), &genai.GenerateContentConfig{
-		SystemInstruction: genai.NewContentFromText(reviewerSystemPrompt, "user"),
+		SystemInstruction: &genai.Content{Parts: []*genai.Part{genai.NewPartFromText(reviewerSystemPrompt)}},
 		ResponseMIMEType:  "application/json",
 	})
 	if err != nil {
