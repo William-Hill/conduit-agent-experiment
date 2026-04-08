@@ -31,8 +31,11 @@ func TestSaveThenLoadDossier(t *testing.T) {
 	if got.Summary != want.Summary {
 		t.Errorf("Summary = %q, want %q", got.Summary, want.Summary)
 	}
-	if len(got.Files) != 1 || got.Files[0].Path != "pkg/api/handler.go" {
-		t.Errorf("Files mismatch")
+	if len(got.Files) != 1 {
+		t.Fatalf("len(Files) = %d, want 1", len(got.Files))
+	}
+	if got.Files[0].Path != "pkg/api/handler.go" {
+		t.Errorf("Path = %q, want %q", got.Files[0].Path, "pkg/api/handler.go")
 	}
 	if got.Files[0].Content != "package api\n" {
 		t.Errorf("Content = %q, want %q", got.Files[0].Content, "package api\n")

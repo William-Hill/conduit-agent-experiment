@@ -9,7 +9,7 @@ The pipeline has no visibility into actual token usage or cost. Estimates are ma
 
 ## Design
 
-### 1. Token Fields on LLMCall
+## 1. Token Fields on LLMCall
 
 Add `InputTokens` and `OutputTokens` to `models.LLMCall`:
 
@@ -25,7 +25,7 @@ type LLMCall struct {
 }
 ```
 
-### 2. Token Extraction
+## 2. Token Extraction
 
 **OpenAI-compatible path** (`internal/llm/client.go`):
 
@@ -46,7 +46,7 @@ type Result struct {
 }
 ```
 
-### 3. Cost Calculation
+## 3. Cost Calculation
 
 New package `internal/cost/` with `pricing.go`:
 
@@ -62,9 +62,9 @@ Functions:
 - `Calculate(model string, inputTokens, outputTokens int) float64` — cost in USD for one call
 - `CalculateCalls(calls []models.LLMCall) float64` — sum across a slice of calls
 
-Unknown models return `0.0` with a log warning.
+Unknown models use the most expensive known pricing as a safe fallback and log a warning.
 
-### 4. Budget Controls
+## 4. Budget Controls
 
 New file `internal/cost/budget.go`:
 
@@ -82,7 +82,7 @@ Methods:
 - `workflow.go`: after each LLM step, call `CheckStep()` then `CheckTotal()`. On error, set `run.FinalStatus = RunStatusFailed` with a descriptive reason and return early.
 - `implementer/agent.go`: check running total against `IMPL_MAX_COST` after each tool runner iteration. Break out of the loop if exceeded.
 
-### 5. Cost Report Artifact
+## 5. Cost Report Artifact
 
 New function `WriteCostReport(dir string, calls []models.LLMCall, budget Budget) error` in `internal/cost/`.
 
@@ -112,7 +112,7 @@ Writes `cost.json` alongside existing `run.json` and `evaluation.json`:
 
 Also populate the existing `Evaluation.LLMTokensUsed` field with total tokens.
 
-### 6. CLI Output
+## 6. CLI Output
 
 Add a cost summary line after workflow completion in `cmd/experiment/main.go`:
 

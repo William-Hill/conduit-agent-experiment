@@ -144,6 +144,9 @@ func main() {
 	}
 	log.Printf("Agent completed in %d iterations", result.Iterations)
 	log.Printf("Summary: %s", result.Summary)
+	if result.BudgetExceeded {
+		log.Fatalf("Implementer budget exceeded (IMPL_MAX_COST=$%.4f) — halting before PR creation", implMaxCost)
+	}
 
 	// 8. Check for changes (staged, unstaged, and untracked)
 	diffCmd := exec.CommandContext(ctx, "git", "diff", "--stat")

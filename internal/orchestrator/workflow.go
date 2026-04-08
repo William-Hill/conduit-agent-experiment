@@ -277,6 +277,26 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 		}
 	}
 
+	// Re-check implementer budget after generation calls.
+	if err := budget.CheckStep("implementer", llmCalls); err != nil {
+		run.AgentsInvoked = agentsInvoked
+		run.FinalStatus = models.RunStatusFailed
+		run.TriageReason = err.Error()
+		run.EndedAt = time.Now()
+		run.LLMCalls = llmCalls
+		run.ImplementerPlan = plan.PlanSummary
+		return &WorkflowResult{Run: run, Dossier: dossier, Task: task, TriageDecision: triageDecision, PatchPlan: plan, LLMCalls: llmCalls, Budget: budget}, nil
+	}
+	if err := budget.CheckTotal(llmCalls); err != nil {
+		run.AgentsInvoked = agentsInvoked
+		run.FinalStatus = models.RunStatusFailed
+		run.TriageReason = err.Error()
+		run.EndedAt = time.Now()
+		run.LLMCalls = llmCalls
+		run.ImplementerPlan = plan.PlanSummary
+		return &WorkflowResult{Run: run, Dossier: dossier, Task: task, TriageDecision: triageDecision, PatchPlan: plan, LLMCalls: llmCalls, Budget: budget}, nil
+	}
+
 	// If all files failed, mark the run as failed with implementation_hallucination.
 	if totalFiles > 0 && len(failedFiles) == totalFiles {
 		run.AgentsInvoked = agentsInvoked

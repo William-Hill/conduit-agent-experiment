@@ -60,6 +60,7 @@ func TestLoadBudgetFromEnv(t *testing.T) {
 	t.Setenv("PIPELINE_MAX_COST", "0.50")
 	t.Setenv("ARCHIVIST_MAX_COST", "0.10")
 	t.Setenv("IMPL_MAX_COST", "0.25")
+	t.Setenv("ARCHITECT_MAX_COST", "0.15")
 
 	b := LoadBudget()
 	if b.PipelineCap != 0.50 {
@@ -70,5 +71,11 @@ func TestLoadBudgetFromEnv(t *testing.T) {
 	}
 	if b.StepCaps["implementer"] != 0.25 {
 		t.Errorf("implementer cap = %f, want 0.25", b.StepCaps["implementer"])
+	}
+	if b.StepCaps["architect"] != 0.15 {
+		t.Errorf("architect cap = %f, want 0.15", b.StepCaps["architect"])
+	}
+	if _, ok := b.StepCaps["planner"]; ok {
+		t.Error("planner cap should not exist")
 	}
 }

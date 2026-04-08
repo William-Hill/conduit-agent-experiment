@@ -141,7 +141,7 @@ The PR demonstrated the pipeline works mechanically. The CI failure confirmed th
 | #12 | Epic: Hybrid Architecture Pipeline | -- | Tracking epic |
 | #17 | Integrate Greptile for automated code review | High | Open |
 | #18 | Add review feedback response loop | High | Open |
-| #21 | Per-step cost tracking and budget controls | Medium | Open |
+| #21 | Per-step cost tracking and budget controls | Medium | Closed |
 | #14 | Deploy triage agent to Cloud Run | Medium | Open |
 | #19 | Human-in-the-loop integration points | Medium | Open |
 | #20 | Project onboarding guide | Low | Open |

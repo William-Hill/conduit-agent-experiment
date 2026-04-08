@@ -2,6 +2,7 @@ package cost
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -22,11 +23,11 @@ func LoadBudget() Budget {
 	if v := EnvFloat("ARCHIVIST_MAX_COST"); v > 0 {
 		b.StepCaps["archivist"] = v
 	}
-	if v := EnvFloat("PLANNER_MAX_COST"); v > 0 {
-		b.StepCaps["planner"] = v
-	}
 	if v := EnvFloat("IMPL_MAX_COST"); v > 0 {
 		b.StepCaps["implementer"] = v
+	}
+	if v := EnvFloat("ARCHITECT_MAX_COST"); v > 0 {
+		b.StepCaps["architect"] = v
 	}
 	return b
 }
@@ -69,6 +70,7 @@ func EnvFloat(key string) float64 {
 	}
 	v, err := strconv.ParseFloat(s, 64)
 	if err != nil {
+		log.Printf("cost: invalid value for %s=%q, ignoring (expected float)", key, s)
 		return 0
 	}
 	return v
