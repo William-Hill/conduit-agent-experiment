@@ -90,6 +90,26 @@ data/
 configs/           # YAML configuration
 ```
 
+## CI / Automated Runs
+
+The pipeline can run autonomously via GitHub Actions (see [ADR 006](docs/adr/006-pipeline-deployment-github-actions.md)):
+
+- **Weekly cron:** Runs every Monday at 9am UTC
+- **Manual dispatch:** Trigger from the Actions tab with optional issue number, HITL mode, and model override
+- **Event-driven:** Responds to `repository_dispatch` events for integration with external triggers
+
+### Required secrets
+
+| Secret | Description |
+|--------|-------------|
+| `ANTHROPIC_API_KEY` | Claude API key (implementer) |
+| `GOOGLE_API_KEY` | Gemini API key (archivist, planner, reviewer) |
+| `GH_TOKEN` | GitHub PAT with `repo` scope (cross-repo PR creation) |
+
+### Cost
+
+~$0.06/run. Matching Conduit's active-period velocity (36 runs/month) costs ~$2.16/month. See the [full cost analysis](docs/adr/006-pipeline-deployment-github-actions.md#cost-summary).
+
 ## Tests
 
 ```bash

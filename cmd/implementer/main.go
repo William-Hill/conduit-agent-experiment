@@ -181,6 +181,12 @@ func main() {
 	}
 	log.Printf("Agent completed in %d iterations", result.Iterations)
 	log.Printf("Summary: %s", result.Summary)
+
+	// Write run artifacts for CI (GitHub Actions artifact upload)
+	if artifactDir := os.Getenv("IMPL_ARTIFACT_DIR"); artifactDir != "" {
+		writeRunArtifacts(artifactDir, issue, result, modelName, plan)
+	}
+
 	if result.BudgetExceeded {
 		log.Printf("Implementer budget exceeded (IMPL_MAX_COST=$%.4f) — halting before PR creation", implMaxCost)
 		os.RemoveAll(repoDir)
@@ -237,6 +243,11 @@ func main() {
 	}
 
 	log.Printf("Draft PR created: %s", prURL)
+
+	// Update artifact with PR URL
+	if artifactDir := os.Getenv("IMPL_ARTIFACT_DIR"); artifactDir != "" {
+		appendPRURL(artifactDir, prURL)
+	}
 
 	// 11. Gate 3: Bot review loop + human approval (HITL)
 	if hitlCfg.Gate3Enabled {
@@ -436,6 +447,66 @@ func extractPRNumber(prURL string) int {
 		return 0
 	}
 	return n
+}
+
+// writeRunArtifacts writes run metadata and cost info to the artifact directory
+// for collection by GitHub Actions.
+func writeRunArtifacts(dir string, issue *triage.RankedIssue, result *implementer.Result, modelName string, plan *planner.ImplementationPlan) {
+	model := modelName
+	if model == "" {
+		model = "claude-haiku-4-5-20251001"
+	}
+
+	summary := map[string]any{
+		"issue_number":          issue.Number,
+		"issue_title":           issue.Title,
+		"model":                 model,
+		"iterations":            result.Iterations,
+		"input_tokens":          result.InputTokens,
+		"output_tokens":         result.OutputTokens,
+		"cache_creation_tokens": result.CacheCreationTokens,
+		"cache_read_tokens":     result.CacheReadTokens,
+		"budget_exceeded":       result.BudgetExceeded,
+		"summary":               result.Summary,
+		"plan_chars":            len(plan.Markdown),
+		"timestamp":             time.Now().UTC().Format(time.RFC3339),
+	}
+
+	// Estimate cost using the pricing package
+	implCost := cost.Calculate(model, result.InputTokens, result.OutputTokens)
+	summary["estimated_cost_usd"] = implCost
+
+	data, err := json.MarshalIndent(summary, "", "  ")
+	if err != nil {
+		log.Printf("Warning: failed to marshal run summary: %v", err)
+		return
+	}
+	if err := os.WriteFile(filepath.Join(dir, "run-summary.json"), data, 0644); err != nil {
+		log.Printf("Warning: failed to write run-summary.json: %v", err)
+		return
+	}
+	log.Printf("Artifacts written to %s", dir)
+}
+
+// appendPRURL updates the run summary artifact with the PR URL after creation.
+func appendPRURL(dir string, prURL string) {
+	path := filepath.Join(dir, "run-summary.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		log.Printf("Warning: failed to read run-summary.json for PR URL update: %v", err)
+		return
+	}
+	var summary map[string]any
+	if err := json.Unmarshal(data, &summary); err != nil {
+		log.Printf("Warning: failed to parse run-summary.json: %v", err)
+		return
+	}
+	summary["pr_url"] = prURL
+	updated, err := json.MarshalIndent(summary, "", "  ")
+	if err != nil {
+		return
+	}
+	os.WriteFile(path, updated, 0644)
 }
 
 func fetchPRComments(ctx context.Context, adapter *github.Adapter, prNum int) ([]byte, error) {

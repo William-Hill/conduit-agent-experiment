@@ -159,6 +159,43 @@ This fetches review comments, classifies by severity, runs a fix agent, pushes c
 | `RESPONDER_WAIT_SECONDS` | `120` | Wait between iterations for new reviews |
 | `RESPONDER_MODEL` | (Haiku 4.5) | Model for fix agent |
 
+## Running via GitHub Actions (CI)
+
+The pipeline can run autonomously without a local machine. See [ADR 006](adr/006-pipeline-deployment-github-actions.md) for the full design and cost analysis.
+
+### Manual trigger
+
+1. Go to **Actions** > **Run pipeline** in the GitHub repo
+2. Click **Run workflow**
+3. Optionally set: issue number, HITL mode (`yolo` for demos), model override, budget cap
+4. Watch the run in the Actions tab — artifacts (run summary, cost data) are uploaded automatically
+
+### Scheduled runs
+
+The workflow runs automatically every Monday at 9am UTC. It picks the top-ranked issue from triage output and runs in `full` HITL mode (requires label approval on the issue).
+
+### Triggering from external systems
+
+Send a `repository_dispatch` event to trigger a run programmatically:
+
+```bash
+gh api repos/William-Hill/conduit-agent-experiment/dispatches \
+  -f event_type=run-pipeline \
+  -f client_payload[issue_number]=576
+```
+
+### Required secrets
+
+Configure these in **Settings** > **Secrets and variables** > **Actions**:
+
+- `ANTHROPIC_API_KEY` — Claude API key
+- `GOOGLE_API_KEY` — Gemini API key
+- `GH_TOKEN` — GitHub PAT with `repo` scope
+
+### Run artifacts
+
+Each run uploads a `run-summary.json` artifact containing: issue number, model, iterations, token usage, estimated cost, and PR URL. Available in the Actions tab under the run's **Artifacts** section (retained 90 days).
+
 ## Troubleshooting
 
 **Push rejected (branch already exists)**
