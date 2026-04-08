@@ -206,7 +206,6 @@ func envOrDefault(key, fallback string) string {
 	return fallback
 }
 
-
 func readTopRankedIssue(dir string) (*triage.RankedIssue, error) {
 	files, err := filepath.Glob(filepath.Join(dir, "triage-*.json"))
 	if err != nil {
