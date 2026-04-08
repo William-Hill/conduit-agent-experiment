@@ -7,6 +7,13 @@ import (
 	"time"
 )
 
+// HITL operating modes.
+const (
+	ModeFull   = "full"
+	ModeYolo   = "yolo"
+	ModeCustom = "custom"
+)
+
 // Config holds all HITL gate settings.
 type Config struct {
 	Mode               string        // full, yolo, custom
@@ -22,7 +29,7 @@ type Config struct {
 
 // LoadConfig loads HITL configuration from environment variables.
 func LoadConfig() Config {
-	mode := envOrDefault("HITL_MODE", "full")
+	mode := envOrDefault("HITL_MODE", ModeFull)
 
 	cfg := Config{
 		Mode:               mode,
@@ -35,13 +42,13 @@ func LoadConfig() Config {
 	}
 
 	switch mode {
-	case "yolo":
+	case ModeYolo:
 		cfg.Gate1Enabled = false
 		cfg.Gate3Enabled = false
-	case "custom":
+	case ModeCustom:
 		cfg.Gate1Enabled = envBoolOrDefault("HITL_GATE1_ENABLED", true)
 		cfg.Gate3Enabled = envBoolOrDefault("HITL_GATE3_ENABLED", true)
-	default: // "full"
+	default:
 		cfg.Gate1Enabled = true
 		cfg.Gate3Enabled = true
 	}

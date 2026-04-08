@@ -48,6 +48,8 @@ func main() {
 		ForkOwner:  forkOwner,
 		BaseBranch: "main",
 	}
+	hitlCfg := hitl.LoadConfig()
+	hitlAdapter := &github.HITLAdapter{Adapter: adapter}
 
 	for iteration := 1; iteration <= maxIterations; iteration++ {
 		log.Printf("=== Responder iteration %d/%d ===", iteration, maxIterations)
@@ -138,9 +140,6 @@ func main() {
 		}
 		log.Printf("Pushed iteration %d", iteration)
 
-		// Resolve addressed threads (HITL)
-		hitlCfg := hitl.LoadConfig()
-		hitlAdapter := &github.HITLAdapter{Adapter: adapter}
 		if hitlCfg.ResolveBotComments {
 			resolved, resolveErr := hitl.ResolveAddressedThreads(ctx, hitlAdapter, prNum)
 			if resolveErr != nil {
@@ -150,7 +149,6 @@ func main() {
 			}
 		}
 
-		// Re-trigger bot reviews after pushing fixes
 		if len(hitlCfg.BotReviewers) > 0 {
 			if triggerErr := hitl.TriggerBotReviews(ctx, hitlAdapter, prNum, hitlCfg.BotReviewers); triggerErr != nil {
 				log.Printf("Warning: failed to re-trigger bot reviews: %v", triggerErr)

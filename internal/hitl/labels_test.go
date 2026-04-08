@@ -97,14 +97,3 @@ func TestHasAnyLabel_NoneFound(t *testing.T) {
 	}
 }
 
-func TestApplyLabel(t *testing.T) {
-	mock := &mockAdapter{}
-
-	if err := ApplyLabel(context.Background(), mock, 42, "agent:candidate"); err != nil {
-		t.Fatalf("ApplyLabel() error: %v", err)
-	}
-
-	if len(mock.addedLabels) != 1 || mock.addedLabels[0] != "agent:candidate" {
-		t.Errorf("addedLabels = %v, want [agent:candidate]", mock.addedLabels)
-	}
-}

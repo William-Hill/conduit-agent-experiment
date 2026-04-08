@@ -65,31 +65,28 @@ func main() {
 	}
 	log.Printf("Selected issue #%d: %s (score %d)", issue.Number, issue.Title, issue.Score)
 
-	// 1b. Gate 1: Issue selection approval (HITL)
+	// 2. Set up GitHub adapter and HITL config
+	adapter := &github.Adapter{
+		Owner:      owner,
+		Repo:       repo,
+		ForkOwner:  forkOwner,
+		BaseBranch: "main",
+	}
 	hitlCfg := hitl.LoadConfig()
+	hitlAdapter := &github.HITLAdapter{Adapter: adapter}
+
+	// 3. Gate 1: Issue selection approval (HITL)
 	if hitlCfg.Gate1Enabled {
 		log.Printf("[HITL] Gate 1 active — requesting approval for issue #%d", issue.Number)
 
-		// Need adapter early for Gate 1
-		gate1Adapter := &github.Adapter{
-			Owner:      owner,
-			Repo:       repo,
-			ForkOwner:  forkOwner,
-			BaseBranch: "main",
-		}
-		hitlAdapter := &github.HITLAdapter{Adapter: gate1Adapter}
-
-		// Apply candidate label
 		if err := hitlAdapter.AddLabel(ctx, issue.Number, hitl.LabelCandidate); err != nil {
 			log.Printf("[HITL] Warning: failed to apply candidate label: %v", err)
 		}
 
-		// Post triage rationale
 		if err := hitl.PostTriageRationale(ctx, hitlAdapter, issue.Number, issue.Difficulty, issue.BlastRadius, issue.Score, issue.Rationale); err != nil {
 			log.Printf("[HITL] Warning: failed to post rationale: %v", err)
 		}
 
-		// Wait for human decision
 		log.Printf("[HITL] Waiting for %s or %s label on issue #%d (polling every %v)...",
 			hitl.LabelApproved, hitl.LabelRejected, issue.Number, hitlCfg.Gate1PollInterval)
 
@@ -106,14 +103,6 @@ func main() {
 		log.Printf("[HITL] Issue #%d approved by human, proceeding", issue.Number)
 	} else {
 		log.Printf("[HITL] Gate 1 disabled (mode=%s), proceeding automatically", hitlCfg.Mode)
-	}
-
-	// 2. Fetch full issue details
-	adapter := &github.Adapter{
-		Owner:      owner,
-		Repo:       repo,
-		ForkOwner:  forkOwner,
-		BaseBranch: "main",
 	}
 	fullIssue, err := adapter.GetIssue(ctx, issue.Number)
 	if err != nil {
@@ -257,21 +246,16 @@ func main() {
 			log.Fatalf("[HITL] could not extract PR number from URL: %s", prURL)
 		}
 
-		hitlAdapter := &github.HITLAdapter{Adapter: adapter}
-
 		for botIter := 1; botIter <= hitlCfg.BotMaxIterations; botIter++ {
 			log.Printf("[HITL] Bot review iteration %d/%d", botIter, hitlCfg.BotMaxIterations)
 
-			// Trigger bot reviews
 			if err := hitl.TriggerBotReviews(ctx, hitlAdapter, prNum, hitlCfg.BotReviewers); err != nil {
 				log.Printf("[HITL] Warning: failed to trigger bot reviews: %v", err)
 			}
 
-			// Wait for bot reviews to arrive
 			log.Printf("[HITL] Waiting %v for bot reviews...", hitlCfg.BotReviewWait)
 			time.Sleep(hitlCfg.BotReviewWait)
 
-			// Fetch and classify review comments
 			commentData, err := fetchPRComments(ctx, adapter, prNum)
 			if err != nil {
 				log.Printf("[HITL] Warning: failed to fetch PR comments: %v", err)
@@ -301,7 +285,6 @@ func main() {
 			}
 			log.Printf("[HITL] Fix agent completed in %d iterations", fixResult.Iterations)
 
-			// Check for changes and push
 			statusCmd := exec.CommandContext(ctx, "git", "status", "--porcelain")
 			statusCmd.Dir = repoDir
 			statusOutput, err := statusCmd.Output()
@@ -330,7 +313,6 @@ func main() {
 				continue
 			}
 
-			// Resolve addressed threads
 			if hitlCfg.ResolveBotComments {
 				resolved, err := hitl.ResolveAddressedThreads(ctx, hitlAdapter, prNum)
 				if err != nil {
@@ -341,13 +323,11 @@ func main() {
 			}
 		}
 
-		// Signal human
 		if err := hitlAdapter.AddLabel(ctx, prNum, hitl.LabelReadyForReview); err != nil {
 			log.Printf("[HITL] Warning: failed to apply ready-for-review label: %v", err)
 		}
 		log.Printf("[HITL] Bot review loop complete. Waiting for human action on PR #%d...", prNum)
 
-		// Wait for human decision
 		action, err := hitl.WaitForPRAction(ctx, hitlAdapter, prNum, hitlCfg.Gate3PollInterval)
 		if err != nil {
 			log.Fatalf("[HITL] Gate 3 error: %v", err)

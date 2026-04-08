@@ -35,16 +35,6 @@ const (
 	LabelReadyForReview = "agent:ready-for-review"
 )
 
-// ApplyLabel adds a label to an issue or PR.
-func ApplyLabel(ctx context.Context, gh GHAdapter, number int, label string) error {
-	return gh.AddLabel(ctx, number, label)
-}
-
-// RemoveLabel removes a label from an issue or PR.
-func RemoveLabel(ctx context.Context, gh GHAdapter, number int, label string) error {
-	return gh.RemoveLabel(ctx, number, label)
-}
-
 // HasLabel checks if an issue or PR has a specific label.
 func HasLabel(ctx context.Context, gh GHAdapter, number int, label string) (bool, error) {
 	labels, err := gh.GetLabels(ctx, number)
