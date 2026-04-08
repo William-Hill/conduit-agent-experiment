@@ -94,7 +94,6 @@ func main() {
 		if err != nil {
 			log.Fatalf("cloning repo: %v", err)
 		}
-		defer os.RemoveAll(repoDir)
 
 		// 6. Run fix agent
 		prompt := responder.BuildFixPrompt(actionable)
@@ -123,6 +122,7 @@ func main() {
 		}
 		if len(diffOutput) == 0 && len(statusOutput) == 0 {
 			log.Printf("No changes produced, skipping push")
+			os.RemoveAll(repoDir)
 			continue
 		}
 		log.Printf("Changes:\n%s", string(diffOutput))
@@ -133,6 +133,7 @@ func main() {
 			log.Fatalf("commit and push failed: %v", err)
 		}
 		log.Printf("Pushed iteration %d", iteration)
+		os.RemoveAll(repoDir)
 
 		// 9. Wait for new reviews
 		if iteration < maxIterations {
