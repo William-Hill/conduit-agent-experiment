@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/models"
 )
@@ -36,16 +37,14 @@ func WriteCostReport(dir string, calls []models.LLMCall, budget Budget) error {
 		model        string
 		inputTokens  int
 		outputTokens int
+		costUSD      float64
 		calls        int
 	}
 	byStep := make(map[string]*stepAccum)
 	var stepOrder []string
 
 	for _, c := range calls {
-		step := c.Agent
-		if len(step) > 6 && step[len(step)-6:] == "-retry" {
-			step = step[:len(step)-6]
-		}
+		step := strings.TrimSuffix(c.Agent, "-retry")
 
 		acc, ok := byStep[step]
 		if !ok {
@@ -55,6 +54,7 @@ func WriteCostReport(dir string, calls []models.LLMCall, budget Budget) error {
 		}
 		acc.inputTokens += c.InputTokens
 		acc.outputTokens += c.OutputTokens
+		acc.costUSD += Calculate(c.Model, c.InputTokens, c.OutputTokens)
 		acc.calls++
 	}
 
@@ -69,7 +69,7 @@ func WriteCostReport(dir string, calls []models.LLMCall, budget Budget) error {
 			Model:        acc.model,
 			InputTokens:  acc.inputTokens,
 			OutputTokens: acc.outputTokens,
-			CostUSD:      Calculate(acc.model, acc.inputTokens, acc.outputTokens),
+			CostUSD:      acc.costUSD,
 			Calls:        acc.calls,
 		})
 	}

@@ -22,10 +22,12 @@ func TestCalculateHaiku(t *testing.T) {
 	}
 }
 
-func TestCalculateUnknownModel(t *testing.T) {
+func TestCalculateUnknownModelUsesFallback(t *testing.T) {
+	// Unknown models use Sonnet pricing (most expensive) as a safe fallback.
 	got := Calculate("unknown-model", 1000, 500)
-	if got != 0.0 {
-		t.Errorf("Calculate(unknown, ...) = %f, want 0.0", got)
+	want := Calculate("claude-sonnet-4-6-20250514", 1000, 500)
+	if diff := got - want; diff > 1e-9 || diff < -1e-9 {
+		t.Errorf("Calculate(unknown, 1000, 500) = %f, want fallback %f", got, want)
 	}
 }
 

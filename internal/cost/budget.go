@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/models"
 )
@@ -37,7 +38,8 @@ func (b Budget) CheckStep(step string, calls []models.LLMCall) error {
 	}
 	var stepCost float64
 	for _, c := range calls {
-		if c.Agent == step || c.Agent == step+"-retry" {
+		agent := strings.TrimSuffix(c.Agent, "-retry")
+		if agent == step {
 			stepCost += Calculate(c.Model, c.InputTokens, c.OutputTokens)
 		}
 	}
