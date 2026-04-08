@@ -71,6 +71,39 @@ Codex's weakness: fewer findings overall, and no documentation or test safety an
 | genai SystemInstruction API misuse | -- | First to find (web research) | -- |
 | Mixed-model report cosmetic issue | First to find | -- | -- |
 
+### Round 2 Findings (after initial fixes were pushed)
+
+| Finding | Greptile | CodeRabbit | Codex |
+|---------|----------|------------|-------|
+| Cache tokens excluded from budget calc | First to find | -- | -- |
+| log.Fatalf bypasses defer (temp dir leak) | First to find | -- | -- |
+| Responder loop missing budget controls | -- | First to find | -- |
+| Responder defer leak inside loop | -- | First to find | -- |
+| Unknown severity sorts as critical (map zero-value) | -- | First to find | -- |
+| Experiment numbering inconsistency in docs | -- | First to find | -- |
+
+### Round 2 Analysis
+
+Greptile's round 2 findings reinforced its strength in **domain-specific semantic analysis**:
+
+1. **Cache token pricing** (P1): This is the most technically sophisticated finding across all reviewers in both rounds. Greptile understood that Anthropic's prompt caching splits input tokens into three billing categories (`InputTokens`, `CacheCreationInputTokens`, `CacheReadInputTokens`) with different pricing multipliers (1.0x, 1.25x, 0.1x). It traced from the caching setup (where `CacheControl: cache` is set on system prompt and user message) through to the budget calculation and concluded the budget cap was effectively inoperative because only `InputTokens` (near-zero with caching) was being counted. No other reviewer caught this.
+
+2. **log.Fatalf bypasses defer** (P1): Greptile identified that `log.Fatalf` calls `os.Exit(1)` which skips deferred cleanup functions. This is a Go-specific runtime behavior insight — the reviewer understands Go's defer/exit semantics, not just code patterns.
+
+CodeRabbit's round 2 findings were **pattern-based and documentation-focused** as expected: resource leaks from defer-in-loop (a well-known Go anti-pattern), map zero-value bugs (another common Go pattern), and spec-code consistency checks.
+
+### Emerging Pattern: Issue Type by Reviewer
+
+| Issue Category | Primary Finder |
+|---------------|---------------|
+| Cross-file data flow breaks | Greptile |
+| Domain-specific API semantics (Anthropic caching, genai roles) | Greptile (runtime), CodeRabbit (API docs) |
+| Go runtime behavior (defer/exit, map zero-value) | Both (Greptile for novel cases, CodeRabbit for well-known patterns) |
+| Documentation drift and consistency | CodeRabbit |
+| Test safety and static analysis | CodeRabbit |
+| Control flow ordering / missing checks | Codex |
+| Resource lifecycle (leaks, cleanup) | Greptile + CodeRabbit (different angles) |
+
 ## Key Takeaway
 
 **No single reviewer catches everything.** The combination of all three produced significantly better coverage than any one alone:
