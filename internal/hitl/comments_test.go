@@ -25,7 +25,7 @@ func TestTriggerBotReviews(t *testing.T) {
 	}
 }
 
-func TestResolveAddressedThreads(t *testing.T) {
+func TestResolveAllThreads(t *testing.T) {
 	mock := &mockAdapter{
 		threads: []ReviewThread{
 			{ID: "RT_1", IsResolved: false, Body: "Fix this typo"},
@@ -34,9 +34,9 @@ func TestResolveAddressedThreads(t *testing.T) {
 		},
 	}
 
-	resolved, err := ResolveAddressedThreads(context.Background(), mock, 42)
+	resolved, err := ResolveAllThreads(context.Background(), mock, 42)
 	if err != nil {
-		t.Fatalf("ResolveAddressedThreads() error: %v", err)
+		t.Fatalf("ResolveAllThreads() error: %v", err)
 	}
 
 	if resolved != 2 {
@@ -47,16 +47,16 @@ func TestResolveAddressedThreads(t *testing.T) {
 	}
 }
 
-func TestResolveAddressedThreads_NoneUnresolved(t *testing.T) {
+func TestResolveAllThreads_NoneUnresolved(t *testing.T) {
 	mock := &mockAdapter{
 		threads: []ReviewThread{
 			{ID: "RT_1", IsResolved: true, Body: "Done"},
 		},
 	}
 
-	resolved, err := ResolveAddressedThreads(context.Background(), mock, 42)
+	resolved, err := ResolveAllThreads(context.Background(), mock, 42)
 	if err != nil {
-		t.Fatalf("ResolveAddressedThreads() error: %v", err)
+		t.Fatalf("ResolveAllThreads() error: %v", err)
 	}
 	if resolved != 0 {
 		t.Errorf("resolved = %d, want 0", resolved)

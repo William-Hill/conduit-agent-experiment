@@ -6,6 +6,10 @@ import (
 )
 
 func TestLoadConfig_Defaults(t *testing.T) {
+	t.Setenv("HITL_MODE", "")
+	t.Setenv("HITL_GATE1_ENABLED", "")
+	t.Setenv("HITL_GATE3_ENABLED", "")
+	t.Setenv("HITL_BOT_REVIEWERS", "")
 	cfg := LoadConfig()
 
 	if cfg.Mode != "full" {

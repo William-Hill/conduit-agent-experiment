@@ -141,7 +141,7 @@ func main() {
 		log.Printf("Pushed iteration %d", iteration)
 
 		if hitlCfg.ResolveBotComments {
-			resolved, resolveErr := hitl.ResolveAddressedThreads(ctx, hitlAdapter, prNum)
+			resolved, resolveErr := hitl.ResolveAllThreads(ctx, hitlAdapter, prNum)
 			if resolveErr != nil {
 				log.Printf("Warning: failed to resolve threads: %v", resolveErr)
 			} else if resolved > 0 {

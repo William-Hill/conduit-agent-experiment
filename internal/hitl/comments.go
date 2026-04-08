@@ -15,9 +15,10 @@ func TriggerBotReviews(ctx context.Context, gh GHAdapter, prNumber int, triggers
 	return nil
 }
 
-// ResolveAddressedThreads resolves all unresolved review threads on a PR.
-// Returns the number of threads resolved.
-func ResolveAddressedThreads(ctx context.Context, gh GHAdapter, prNumber int) (int, error) {
+// ResolveAllThreads resolves all unresolved review threads on a PR.
+// Returns the number of threads resolved. Note: this resolves every unresolved
+// thread regardless of whether the agent actually addressed the underlying issue.
+func ResolveAllThreads(ctx context.Context, gh GHAdapter, prNumber int) (int, error) {
 	threads, err := gh.GetReviewThreads(ctx, prNumber)
 	if err != nil {
 		return 0, fmt.Errorf("fetching review threads for PR #%d: %w", prNumber, err)

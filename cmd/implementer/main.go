@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -294,10 +295,14 @@ func main() {
 			}
 
 			commitMsg := fmt.Sprintf("fix: address bot review comments (iteration %d)", botIter)
+			pushRemote := "origin"
+			if adapter.ForkOwner != "" && adapter.ForkOwner != adapter.Owner {
+				pushRemote = "fork"
+			}
 			pushCmds := [][]string{
 				{"git", "add", "-A"},
 				{"git", "commit", "-m", commitMsg},
-				{"git", "push", "origin", branch},
+				{"git", "push", pushRemote, branch},
 			}
 			pushFailed := false
 			for _, args := range pushCmds {
@@ -314,7 +319,7 @@ func main() {
 			}
 
 			if hitlCfg.ResolveBotComments {
-				resolved, err := hitl.ResolveAddressedThreads(ctx, hitlAdapter, prNum)
+				resolved, err := hitl.ResolveAllThreads(ctx, hitlAdapter, prNum)
 				if err != nil {
 					log.Printf("[HITL] Warning: failed to resolve threads: %v", err)
 				} else {
@@ -417,6 +422,7 @@ func cloneRepo(ctx context.Context, owner, repo string) (string, error) {
 }
 
 func extractPRNumber(prURL string) int {
+	prURL = strings.TrimRight(prURL, "/")
 	parts := strings.Split(prURL, "/")
 	if len(parts) == 0 {
 		return 0
@@ -434,9 +440,11 @@ func fetchPRComments(ctx context.Context, adapter *github.Adapter, prNum int) ([
 		fmt.Sprintf("repos/%s/%s/pulls/%d/comments", adapter.Owner, adapter.Repo, prNum),
 	}
 	cmd := exec.CommandContext(ctx, "gh", args...)
-	out, err := cmd.CombinedOutput()
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("gh api: %w\n%s", err, out)
+		return nil, fmt.Errorf("gh api: %w\n%s", err, stderr.String())
 	}
 	return out, nil
 }
