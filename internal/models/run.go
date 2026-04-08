@@ -58,9 +58,11 @@ type CommandLog struct {
 
 // LLMCall records a single LLM invocation during a run.
 type LLMCall struct {
-	Agent    string `json:"agent"`
-	Model    string `json:"model"`
-	Prompt   string `json:"prompt"`
-	Response string `json:"response"`
-	Duration string `json:"duration"`
+	Agent        string `json:"agent"`
+	Model        string `json:"model"`
+	Prompt       string `json:"prompt"`
+	Response     string `json:"response"`
+	Duration     string `json:"duration"`
+	InputTokens  int    `json:"input_tokens"`
+	OutputTokens int    `json:"output_tokens"`
 }
