@@ -14,6 +14,7 @@ import (
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/archivist"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/cost"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/github"
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/hitl"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/implementer"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/planner"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/triage"
@@ -60,6 +61,49 @@ func main() {
 		log.Fatalf("reading triage output: %v", err)
 	}
 	log.Printf("Selected issue #%d: %s (score %d)", issue.Number, issue.Title, issue.Score)
+
+	// 1b. Gate 1: Issue selection approval (HITL)
+	hitlCfg := hitl.LoadConfig()
+	if hitlCfg.Gate1Enabled {
+		log.Printf("[HITL] Gate 1 active — requesting approval for issue #%d", issue.Number)
+
+		// Need adapter early for Gate 1
+		gate1Adapter := &github.Adapter{
+			Owner:      owner,
+			Repo:       repo,
+			ForkOwner:  forkOwner,
+			BaseBranch: "main",
+		}
+		hitlAdapter := &github.HITLAdapter{Adapter: gate1Adapter}
+
+		// Apply candidate label
+		if err := hitlAdapter.AddLabel(ctx, issue.Number, hitl.LabelCandidate); err != nil {
+			log.Printf("[HITL] Warning: failed to apply candidate label: %v", err)
+		}
+
+		// Post triage rationale
+		if err := hitl.PostTriageRationale(ctx, hitlAdapter, issue.Number, issue.Difficulty, issue.BlastRadius, issue.Score, issue.Rationale); err != nil {
+			log.Printf("[HITL] Warning: failed to post rationale: %v", err)
+		}
+
+		// Wait for human decision
+		log.Printf("[HITL] Waiting for %s or %s label on issue #%d (polling every %v)...",
+			hitl.LabelApproved, hitl.LabelRejected, issue.Number, hitlCfg.Gate1PollInterval)
+
+		label, err := hitl.WaitForLabel(ctx, hitlAdapter, issue.Number,
+			[]string{hitl.LabelApproved, hitl.LabelRejected}, hitlCfg.Gate1PollInterval)
+		if err != nil {
+			log.Fatalf("[HITL] Gate 1 error: %v", err)
+		}
+
+		if label == hitl.LabelRejected {
+			log.Printf("[HITL] Issue #%d rejected by human, exiting", issue.Number)
+			os.Exit(0)
+		}
+		log.Printf("[HITL] Issue #%d approved by human, proceeding", issue.Number)
+	} else {
+		log.Printf("[HITL] Gate 1 disabled (mode=%s), proceeding automatically", hitlCfg.Mode)
+	}
 
 	// 2. Fetch full issue details
 	adapter := &github.Adapter{
