@@ -144,6 +144,10 @@ Analyze the search results and identify the files relevant to fixing this issue.
 		}
 	}
 
+	if len(dr.RelevantFiles) > 0 && len(files) == 0 {
+		return nil, fmt.Errorf("archivist could not read any of the %d files returned by the model (repoDir: %s)", len(dr.RelevantFiles), repoDir)
+	}
+
 	dossier := Dossier{
 		Summary:  dr.Summary,
 		Files:    files,
@@ -217,15 +221,22 @@ func listTopLevel(ctx context.Context, repoDir string) string {
 // readFileContent reads up to 500 lines of a file from the repo.
 // Returns empty string if the path escapes repoDir or the file can't be read.
 func readFileContent(repoDir, relPath string) string {
-	// Validate path stays within repoDir.
+	// Resolve symlinks on both paths to prevent symlink escapes.
+	realRoot, err := filepath.EvalSymlinks(filepath.Clean(repoDir))
+	if err != nil {
+		return ""
+	}
 	full := filepath.Clean(filepath.Join(repoDir, relPath))
-	cleanRoot := filepath.Clean(repoDir)
-	rel, err := filepath.Rel(cleanRoot, full)
-	if err != nil || strings.HasPrefix(rel, "..") {
+	realFull, err := filepath.EvalSymlinks(full)
+	if err != nil {
+		return "" // file doesn't exist
+	}
+	rel, err := filepath.Rel(realRoot, realFull)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return ""
 	}
 
-	f, err := os.Open(full)
+	f, err := os.Open(realFull)
 	if err != nil {
 		return ""
 	}

@@ -1,17 +1,18 @@
 package llmutil
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
-// CleanJSON strips markdown code fences from a JSON response.
+var fencedJSONRE = regexp.MustCompile("(?s)^```[A-Za-z0-9_+-]*\\s*(.*?)\\s*```$")
+
+// CleanJSON strips a single outer markdown code fence from a JSON response.
+// Only removes a complete fence (opening ``` + optional language + closing ```).
 func CleanJSON(s string) string {
 	s = strings.TrimSpace(s)
-	if strings.HasPrefix(s, "```") {
-		if i := strings.Index(s[3:], "\n"); i >= 0 {
-			s = s[3+i+1:]
-		}
-		if j := strings.LastIndex(s, "```"); j >= 0 {
-			s = s[:j]
-		}
+	if m := fencedJSONRE.FindStringSubmatch(s); len(m) == 2 {
+		s = m[1]
 	}
 	return strings.TrimSpace(s)
 }

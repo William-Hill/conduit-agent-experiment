@@ -320,6 +320,20 @@ func TestRunCommandDisallowed(t *testing.T) {
 	}
 }
 
+func TestRunCommandPathQualified(t *testing.T) {
+	dir := t.TempDir()
+	tools, err := NewTools(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool := findTool(tools, "run_command")
+
+	result := execTool(t, tool, `{"command":"./go test"}`)
+	if !strings.Contains(result, "bare name") {
+		t.Errorf("expected 'bare name' error for path-qualified command, got: %q", result)
+	}
+}
+
 func TestRunCommandDisallowedSubcommand(t *testing.T) {
 	dir := t.TempDir()
 	tools, err := NewTools(dir)

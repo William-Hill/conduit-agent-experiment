@@ -205,6 +205,10 @@ func NewTools(repoDir string) ([]anthropic.BetaTool, error) {
 
 			// Make paths relative to repoDir for cleaner output
 			output := strings.ReplaceAll(stdout.String(), repoDir+"/", "")
+			const maxSearchOutput = 64 * 1024
+			if len(output) > maxSearchOutput {
+				output = output[:maxSearchOutput] + "\n... (truncated)"
+			}
 			return textResult(output)
 		},
 	)
@@ -229,6 +233,9 @@ func NewTools(repoDir string) ([]anthropic.BetaTool, error) {
 			}
 
 			base := filepath.Base(argv[0])
+			if argv[0] != base {
+				return textResult(fmt.Sprintf("Error: command must be a bare name, not a path (%q)", argv[0]))
+			}
 			allowed, ok := allowedCommands[base]
 			if !ok {
 				return textResult(fmt.Sprintf("Error: command %q is not allowed. Permitted: go, make, git", base))
@@ -250,7 +257,7 @@ func NewTools(repoDir string) ([]anthropic.BetaTool, error) {
 			cmdCtx, cancel := context.WithTimeout(ctx, 120*1e9) // 2 minute timeout
 			defer cancel()
 
-			cmd := exec.CommandContext(cmdCtx, argv[0], argv[1:]...)
+			cmd := exec.CommandContext(cmdCtx, base, argv[1:]...)
 			cmd.Dir = repoDir
 			cmd.Env = append(os.Environ(), "HOME="+os.Getenv("HOME"))
 
