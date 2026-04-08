@@ -129,7 +129,7 @@ func main() {
 
 		// 8. Commit and push
 		commitMsg := fmt.Sprintf("fix: address review comments (responder iteration %d)", iteration)
-		if err := commitAndPush(ctx, repoDir, branch, forkOwner, owner, commitMsg); err != nil {
+		if err := commitAndPush(ctx, repoDir, branch, commitMsg); err != nil {
 			log.Fatalf("commit and push failed: %v", err)
 		}
 		log.Printf("Pushed iteration %d", iteration)
@@ -197,7 +197,7 @@ func cloneAndCheckout(ctx context.Context, owner, repo, forkOwner, branch string
 	return dir, nil
 }
 
-func commitAndPush(ctx context.Context, repoDir, branch, forkOwner, owner, commitMsg string) error {
+func commitAndPush(ctx context.Context, repoDir, branch, commitMsg string) error {
 	cmds := [][]string{
 		{"git", "add", "-A"},
 		{"git", "commit", "-m", commitMsg},
