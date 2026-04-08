@@ -57,9 +57,11 @@ func WaitForPRAction(ctx context.Context, gh GHAdapter, prNumber int, pollInterv
 			log.Printf("[HITL] transient error checking PR #%d state (%d/%d): %v", prNumber, consecutiveErrors, maxConsecutiveErrors, err)
 		} else {
 			consecutiveErrors = 0
-			action := classifyPRAction(state)
-			if action != "" {
-				return action, nil
+			if state != nil {
+				action := classifyPRAction(state)
+				if action != "" {
+					return action, nil
+				}
 			}
 		}
 
