@@ -81,6 +81,20 @@ func TestParseReviewsNoApproval(t *testing.T) {
 	}
 }
 
+func TestParseReviewsChangesRequestedSupersedes(t *testing.T) {
+	raw := `[
+		{"author": {"login": "user1"}, "state": "APPROVED"},
+		{"author": {"login": "user1"}, "state": "CHANGES_REQUESTED"}
+	]`
+	approved, err := HasApproval([]byte(raw))
+	if err != nil {
+		t.Fatalf("HasApproval: %v", err)
+	}
+	if approved {
+		t.Error("expected approved=false when latest review is CHANGES_REQUESTED")
+	}
+}
+
 func TestGreptileCommentSeverity(t *testing.T) {
 	raw := `[{
 		"user": {"login": "greptile-apps[bot]"},

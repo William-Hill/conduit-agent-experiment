@@ -100,7 +100,7 @@ func main() {
 		plan := &planner.ImplementationPlan{Markdown: prompt}
 		log.Printf("Running fix agent on %d comments...", len(actionable))
 
-		result, err := implementer.RunAgent(ctx, anthropicKey, modelName, repoDir, plan, maxToolIter, 0)
+		result, err := implementer.RunAgent(ctx, anthropicKey, modelName, repoDir, plan, maxToolIter)
 		if err != nil {
 			log.Fatalf("fix agent failed: %v", err)
 		}
