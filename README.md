@@ -98,6 +98,7 @@ make test
 
 ## Documentation
 
+- **[Demo Guide](docs/demo-guide.md)** -- step-by-step instructions for running the pipeline end-to-end
 - **[Experiment Journey](docs/JOURNEY.md)** -- detailed history of what we built, what worked, what failed, and where the project is headed
 - **[Experiments](docs/experiments/)** -- structured reports from each pipeline run
 - **[Design](docs/design.md)** -- full PRD, hypotheses, architecture, and cost model
@@ -105,9 +106,9 @@ make test
 
 ## Status
 
-The pipeline is functional end-to-end. PR [ConduitIO/conduit#2451](https://github.com/ConduitIO/conduit/pull/2451) was the first fully autonomous draft PR.
+The pipeline is functional end-to-end with human-in-the-loop gates, automated code review integration, and cost tracking. Three operating modes: `full` (production, with approval gates), `yolo` (demo, fully autonomous), `custom` (per-gate control).
 
-See [open issues](https://github.com/William-Hill/conduit-agent-experiment/issues) for what's next: automated code review integration, review feedback loops, cost tracking, and Cloud Run deployment.
+See [open issues](https://github.com/William-Hill/conduit-agent-experiment/issues) for what's next.
 
 ## License
 
