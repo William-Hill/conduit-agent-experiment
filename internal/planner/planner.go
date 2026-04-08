@@ -35,7 +35,7 @@ func CreatePlan(ctx context.Context, geminiKey, issueTitle, issueBody string, do
 	prompt := buildPlannerPrompt(issueTitle, issueBody, dossier)
 
 	resp, err := client.Models.GenerateContent(ctx, "gemini-2.5-flash", genai.Text(prompt), &genai.GenerateContentConfig{
-		SystemInstruction: genai.NewContentFromText(plannerSystemPrompt, "user"),
+		SystemInstruction: &genai.Content{Parts: []*genai.Part{genai.NewPartFromText(plannerSystemPrompt)}},
 		MaxOutputTokens:   32000,
 	})
 	if err != nil {

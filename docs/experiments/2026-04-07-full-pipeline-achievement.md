@@ -185,7 +185,6 @@ This failure validates the need for:
 2. **Review response loop** — Can't respond to automated review feedback and iterate
 3. **Human-in-the-loop gates** — No explicit approval points beyond "draft PR"
 4. **Project onboarding** — No standard way to configure the pipeline for a new project
-5. **Cost tracking** — Per-step token usage not captured in run artifacts
 
 ### Proposed Next Phase
 

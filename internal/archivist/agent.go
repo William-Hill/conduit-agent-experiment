@@ -102,7 +102,7 @@ Analyze the search results and identify the files relevant to fixing this issue.
 	resp, err := client.Models.GenerateContent(ctx, "gemini-2.5-flash",
 		genai.Text(prompt),
 		&genai.GenerateContentConfig{
-			SystemInstruction: genai.NewContentFromText(archivistSystemPrompt, "user"),
+			SystemInstruction: &genai.Content{Parts: []*genai.Part{genai.NewPartFromText(archivistSystemPrompt)}},
 			Temperature:       ptr(float32(0.2)),
 		},
 	)

@@ -12,6 +12,7 @@ import (
 	"strconv"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/archivist"
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/cost"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/github"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/implementer"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/planner"
@@ -136,12 +137,19 @@ func main() {
 
 	// 7. Run implementer agent
 	log.Printf("Running implementer agent (max %d iterations)...", maxIter)
-	result, err := implementer.RunAgent(ctx, anthropicKey, modelName, repoDir, plan, maxIter)
+	implMaxCost := cost.EnvFloat("IMPL_MAX_COST")
+	result, err := implementer.RunAgent(ctx, anthropicKey, modelName, repoDir, plan, maxIter, implMaxCost)
 	if err != nil {
 		log.Fatalf("agent failed: %v", err)
 	}
 	log.Printf("Agent completed in %d iterations", result.Iterations)
 	log.Printf("Summary: %s", result.Summary)
+	if result.BudgetExceeded {
+		log.Printf("Implementer budget exceeded (IMPL_MAX_COST=$%.4f) — halting before PR creation", implMaxCost)
+		os.RemoveAll(repoDir)
+		os.RemoveAll(dossierDir)
+		os.Exit(1)
+	}
 
 	// 8. Check for changes (staged, unstaged, and untracked)
 	diffCmd := exec.CommandContext(ctx, "git", "diff", "--stat")

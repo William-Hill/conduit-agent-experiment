@@ -6,7 +6,7 @@ This document traces the full arc of the conduit-agent-experiment project -- wha
 
 Open source projects often lose maintainer bandwidth over time. ConduitIO/conduit, a streaming data platform, saw its commit velocity drop from ~36 commits/month during its active period to ~8 commits/month, while 130+ issues remained open. We hypothesized that a multi-agent AI system could help sustain that velocity -- not by replacing maintainers, but by autonomously handling the low-risk, well-scoped issues that pile up when humans get busy.
 
-The experiment is also material for an [OSA Community talk](docs/design.md) on whether AI can extend the "maintenance half-life" of open source software.
+The experiment is also material for an [OSA Community talk](design.md) on whether AI can extend the "maintenance half-life" of open source software.
 
 ## Milestones
 
@@ -57,7 +57,7 @@ Three experiments targeting real Conduit issues. All three failed, but each fail
 
 ### The architecture pivot (April 6-7, 2026)
 
-After experiments 01-05 showed that the original architecture (all Gemini Flash, ADK agent loops) was unreliable, we made a significant pivot:
+After experiments 01-03 showed that the original architecture (all Gemini Flash, ADK agent loops) was unreliable, we made a significant pivot:
 
 **Old architecture:** ADK Go agent loops for all roles, Gemini Flash everywhere, JSON output format.
 
@@ -115,7 +115,7 @@ The first successful end-to-end run:
 - **Time:** 3 minutes total
 - **Cost:** $0.06
 - **Result:** [ConduitIO/conduit#2451](https://github.com/ConduitIO/conduit/pull/2451) -- 3 files changed, +73/-39 lines
-- **CI result:** Failed -- hallucinated error constants (same failure mode as experiments 02-05)
+- **CI result:** Failed -- hallucinated error constants (same failure mode as experiments 02-03)
 
 The PR demonstrated the pipeline works mechanically. The CI failure confirmed that hallucinated symbols remain the primary challenge, validating the need for symbol inventory injection into the planner prompt.
 
@@ -141,7 +141,7 @@ The PR demonstrated the pipeline works mechanically. The CI failure confirmed th
 | #12 | Epic: Hybrid Architecture Pipeline | -- | Tracking epic |
 | #17 | Integrate Greptile for automated code review | High | Open |
 | #18 | Add review feedback response loop | High | Open |
-| #21 | Per-step cost tracking and budget controls | Medium | Open |
+| #21 | Per-step cost tracking and budget controls | Medium | Closed |
 | #14 | Deploy triage agent to Cloud Run | Medium | Open |
 | #19 | Human-in-the-loop integration points | Medium | Open |
 | #20 | Project onboarding guide | Low | Open |

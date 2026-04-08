@@ -23,8 +23,9 @@ func NewClient(baseURL, apiKey, model string) *Client {
 	return &Client{client: &client, model: model}
 }
 
-// Complete sends a system+user prompt and returns the assistant response.
-func (c *Client) Complete(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
+// Complete sends a system+user prompt and returns the assistant response,
+// along with input and output token counts.
+func (c *Client) Complete(ctx context.Context, systemPrompt, userPrompt string) (string, int, int, error) {
 	resp, err := c.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Model: openai.ChatModel(c.model),
 		Messages: []openai.ChatCompletionMessageParamUnion{
@@ -33,12 +34,15 @@ func (c *Client) Complete(ctx context.Context, systemPrompt, userPrompt string) 
 		},
 	})
 	if err != nil {
-		return "", fmt.Errorf("LLM completion failed: %w", err)
+		return "", 0, 0, fmt.Errorf("LLM completion failed: %w", err)
 	}
 
 	if len(resp.Choices) == 0 {
-		return "", fmt.Errorf("LLM returned no choices")
+		return "", 0, 0, fmt.Errorf("LLM returned no choices")
 	}
 
-	return resp.Choices[0].Message.Content, nil
+	return resp.Choices[0].Message.Content,
+		int(resp.Usage.PromptTokens),
+		int(resp.Usage.CompletionTokens),
+		nil
 }

@@ -70,14 +70,24 @@ func extractSeverity(body string) string {
 		return "skip"
 	}
 
-	// Greptile P-badges (case-sensitive, checked on original body)
-	if strings.Contains(body, "P1") || strings.Contains(body, "p1.svg") {
+	// Greptile badge SVGs (most reliable match)
+	if strings.Contains(body, "p1.svg") {
 		return "critical"
 	}
-	if strings.Contains(body, "P2") || strings.Contains(body, "p2.svg") {
+	if strings.Contains(body, "p2.svg") {
 		return "major"
 	}
-	if strings.Contains(body, "P3") || strings.Contains(body, "p3.svg") {
+	if strings.Contains(body, "p3.svg") {
+		return "nitpick"
+	}
+	// Greptile/Codex text badges
+	if strings.Contains(body, " P1") || strings.Contains(body, "[P1") || strings.HasPrefix(body, "P1") {
+		return "critical"
+	}
+	if strings.Contains(body, " P2") || strings.Contains(body, "[P2") || strings.HasPrefix(body, "P2") {
+		return "major"
+	}
+	if strings.Contains(body, " P3") || strings.Contains(body, "[P3") || strings.HasPrefix(body, "P3") {
 		return "nitpick"
 	}
 

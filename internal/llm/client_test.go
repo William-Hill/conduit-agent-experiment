@@ -44,12 +44,18 @@ func TestComplete(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(server.URL, "test-key", "gemini-2.5-flash")
-	result, err := client.Complete(context.Background(), "You are a helper.", "Say hello")
+	result, inputTokens, outputTokens, err := client.Complete(context.Background(), "You are a helper.", "Say hello")
 	if err != nil {
 		t.Fatalf("Complete() error: %v", err)
 	}
 	if result != "Hello from the LLM" {
 		t.Errorf("result = %q, want 'Hello from the LLM'", result)
+	}
+	if inputTokens != 10 {
+		t.Errorf("inputTokens = %d, want 10", inputTokens)
+	}
+	if outputTokens != 5 {
+		t.Errorf("outputTokens = %d, want 5", outputTokens)
 	}
 }
 
@@ -61,7 +67,7 @@ func TestCompleteError(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(server.URL, "test-key", "gemini-2.5-flash")
-	_, err := client.Complete(context.Background(), "system", "user")
+	_, _, _, err := client.Complete(context.Background(), "system", "user")
 	if err == nil {
 		t.Fatal("expected error from 500 response")
 	}

@@ -8,6 +8,7 @@ import (
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/cost"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/planner"
 )
 
@@ -24,13 +25,19 @@ Do NOT explore the codebase. Do NOT read files unless a build fails. Just write 
 
 // Result holds the outcome of an implementer agent run.
 type Result struct {
-	Summary    string
-	Iterations int
+	Summary             string
+	Iterations          int
+	InputTokens         int
+	OutputTokens        int
+	CacheCreationTokens int
+	CacheReadTokens     int
+	BudgetExceeded      bool
 }
 
 // RunAgent executes the implementer agent against a cloned repo.
 // Model can be overridden (e.g. "claude-haiku-4-5-20251001"); defaults to Haiku 4.5.
-func RunAgent(ctx context.Context, apiKey, modelName, repoDir string, plan *planner.ImplementationPlan, maxIterations int) (*Result, error) {
+// maxCost is the budget cap in USD for this step (0 means no limit).
+func RunAgent(ctx context.Context, apiKey, modelName, repoDir string, plan *planner.ImplementationPlan, maxIterations int, maxCost float64) (*Result, error) {
 	if modelName == "" {
 		modelName = string(anthropic.ModelClaudeHaiku4_5)
 	}
@@ -69,23 +76,44 @@ func RunAgent(ctx context.Context, apiKey, modelName, repoDir string, plan *plan
 		MaxIterations: maxIterations,
 	})
 
+	var totalInput, totalOutput, totalCacheCreate, totalCacheRead int64
+	var budgetExceeded bool
+
 	var finalMsg *anthropic.BetaMessage
 	for msg, err := range runner.All(ctx) {
 		if err != nil {
 			return nil, fmt.Errorf("agent run failed at iteration %d: %w", runner.IterationCount(), err)
 		}
 		finalMsg = msg
+		totalInput += msg.Usage.InputTokens
+		totalOutput += msg.Usage.OutputTokens
+		totalCacheCreate += msg.Usage.CacheCreationInputTokens
+		totalCacheRead += msg.Usage.CacheReadInputTokens
 		// Log tool calls for progress visibility
 		for _, block := range msg.Content {
 			if block.Type == "tool_use" {
 				log.Printf("  [iter %d] tool: %s", runner.IterationCount(), block.Name)
 			}
 		}
+		// Check budget after each iteration, including cache tokens.
+		if maxCost > 0 {
+			spent := cost.CalculateWithCache(modelName, int(totalInput), int(totalCacheCreate), int(totalCacheRead), int(totalOutput))
+			if spent > maxCost {
+				log.Printf("  implementer budget exceeded: $%.4f > cap $%.4f, stopping", spent, maxCost)
+				budgetExceeded = true
+				break
+			}
+		}
 	}
 
 	return &Result{
-		Summary:    extractText(finalMsg),
-		Iterations: runner.IterationCount(),
+		Summary:             extractText(finalMsg),
+		Iterations:          runner.IterationCount(),
+		InputTokens:         int(totalInput),
+		OutputTokens:        int(totalOutput),
+		CacheCreationTokens: int(totalCacheCreate),
+		CacheReadTokens:     int(totalCacheRead),
+		BudgetExceeded:      budgetExceeded,
 	}, nil
 }
 
