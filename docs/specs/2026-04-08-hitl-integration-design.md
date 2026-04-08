@@ -191,3 +191,20 @@ Triage → [Gate 1] → Archivist → Planner → Reviewer → Implementer → V
 | Human can merge/close the draft PR | Pipeline polls PR state, records decision in `run.HumanDecision` |
 | Pipeline pauses and waits at each gate | `WaitForLabel()` and `WaitForPRAction()` poll loops with configurable intervals |
 | Documentation of the HITL workflow | This spec + configuration reference |
+
+## Implementation Notes
+
+**Completed:** 2026-04-08
+
+### Package Structure
+- `internal/hitl/config.go` — Config struct + LoadConfig() from env vars
+- `internal/hitl/labels.go` — GHAdapter interface + PRState/ReviewThread types + label operations
+- `internal/hitl/gates.go` — WaitForLabel + WaitForPRAction polling loops
+- `internal/hitl/comments.go` — Bot review triggering, triage rationale, thread resolution
+- `internal/github/adapter.go` — AddLabel, RemoveLabel, GetLabels, PostComment, GetPRState, GetReviewThreads, ResolveThread
+- `internal/github/hitl_adapter.go` — HITLAdapter wrapper (github.Adapter → hitl.GHAdapter)
+- `cmd/implementer/main.go` — Gate 1 + Gate 3 integration
+- `cmd/responder/main.go` — Thread resolution + bot re-triggering after fix pushes
+
+### Gate 2 Deferred
+See issue #26 for future plan approval gate implementation.
