@@ -1,4 +1,4 @@
-.PHONY: build run-task index report test lint clean triage implement
+.PHONY: build run-task index report test lint clean triage implement respond
 
 BINARY := conduit-experiment
 
@@ -30,3 +30,6 @@ triage:
 
 implement:
 	go run ./cmd/implementer
+
+respond:
+	go run ./cmd/responder
