@@ -7,12 +7,14 @@ import (
 
 // mockAdapter implements the GHAdapter interface for testing.
 type mockAdapter struct {
-	labels        []string
-	addedLabels   []string
-	removedLabels []string
-	comments      []string
-	prState       *PRState
-	addLabelErr   error
+	labels          []string
+	addedLabels     []string
+	removedLabels   []string
+	comments        []string
+	prState         *PRState
+	addLabelErr     error
+	threads         []ReviewThread
+	resolvedThreads []string
 }
 
 func (m *mockAdapter) AddLabel(_ context.Context, _ int, label string) error {
@@ -40,6 +42,15 @@ func (m *mockAdapter) PostComment(_ context.Context, _ int, body string) error {
 
 func (m *mockAdapter) GetPRState(_ context.Context, _ int) (*PRState, error) {
 	return m.prState, nil
+}
+
+func (m *mockAdapter) GetReviewThreads(_ context.Context, _ int) ([]ReviewThread, error) {
+	return m.threads, nil
+}
+
+func (m *mockAdapter) ResolveThread(_ context.Context, threadID string) error {
+	m.resolvedThreads = append(m.resolvedThreads, threadID)
+	return nil
 }
 
 func TestHasLabel(t *testing.T) {

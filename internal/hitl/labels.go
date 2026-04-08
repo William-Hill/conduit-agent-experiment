@@ -2,6 +2,13 @@ package hitl
 
 import "context"
 
+// ReviewThread represents a review thread on a PR.
+type ReviewThread struct {
+	ID         string
+	IsResolved bool
+	Body       string
+}
+
 // GHAdapter defines the GitHub operations needed by HITL gates.
 type GHAdapter interface {
 	AddLabel(ctx context.Context, number int, label string) error
@@ -9,6 +16,8 @@ type GHAdapter interface {
 	GetLabels(ctx context.Context, number int) ([]string, error)
 	PostComment(ctx context.Context, number int, body string) error
 	GetPRState(ctx context.Context, prNumber int) (*PRState, error)
+	GetReviewThreads(ctx context.Context, prNumber int) ([]ReviewThread, error)
+	ResolveThread(ctx context.Context, threadID string) error
 }
 
 // PRState represents the current state of a pull request.

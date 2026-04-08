@@ -25,6 +25,44 @@ func TestTriggerBotReviews(t *testing.T) {
 	}
 }
 
+func TestResolveAddressedThreads(t *testing.T) {
+	mock := &mockAdapter{
+		threads: []ReviewThread{
+			{ID: "RT_1", IsResolved: false, Body: "Fix this typo"},
+			{ID: "RT_2", IsResolved: true, Body: "Already resolved"},
+			{ID: "RT_3", IsResolved: false, Body: "Another issue"},
+		},
+	}
+
+	resolved, err := ResolveAddressedThreads(context.Background(), mock, 42)
+	if err != nil {
+		t.Fatalf("ResolveAddressedThreads() error: %v", err)
+	}
+
+	if resolved != 2 {
+		t.Errorf("resolved = %d, want 2", resolved)
+	}
+	if len(mock.resolvedThreads) != 2 {
+		t.Fatalf("resolvedThreads = %v, want [RT_1, RT_3]", mock.resolvedThreads)
+	}
+}
+
+func TestResolveAddressedThreads_NoneUnresolved(t *testing.T) {
+	mock := &mockAdapter{
+		threads: []ReviewThread{
+			{ID: "RT_1", IsResolved: true, Body: "Done"},
+		},
+	}
+
+	resolved, err := ResolveAddressedThreads(context.Background(), mock, 42)
+	if err != nil {
+		t.Fatalf("ResolveAddressedThreads() error: %v", err)
+	}
+	if resolved != 0 {
+		t.Errorf("resolved = %d, want 0", resolved)
+	}
+}
+
 func TestPostTriageRationale(t *testing.T) {
 	mock := &mockAdapter{}
 

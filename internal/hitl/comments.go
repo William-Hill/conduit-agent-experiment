@@ -15,6 +15,27 @@ func TriggerBotReviews(ctx context.Context, gh GHAdapter, prNumber int, triggers
 	return nil
 }
 
+// ResolveAddressedThreads resolves all unresolved review threads on a PR.
+// Returns the number of threads resolved.
+func ResolveAddressedThreads(ctx context.Context, gh GHAdapter, prNumber int) (int, error) {
+	threads, err := gh.GetReviewThreads(ctx, prNumber)
+	if err != nil {
+		return 0, fmt.Errorf("fetching review threads for PR #%d: %w", prNumber, err)
+	}
+
+	resolved := 0
+	for _, t := range threads {
+		if t.IsResolved {
+			continue
+		}
+		if err := gh.ResolveThread(ctx, t.ID); err != nil {
+			return resolved, fmt.Errorf("resolving thread %s: %w", t.ID, err)
+		}
+		resolved++
+	}
+	return resolved, nil
+}
+
 // PostTriageRationale posts a comment on an issue explaining why it was selected.
 func PostTriageRationale(ctx context.Context, gh GHAdapter, issueNumber int, difficulty, blastRadius string, score int, rationale string) error {
 	body := fmt.Sprintf("### 🤖 Agent Triage\n\nThis issue has been selected as a candidate for automated implementation.\n\n| Property | Value |\n|----------|-------|\n| **Difficulty** | %s |\n| **Blast Radius** | %s |\n| **Score** | %d |\n\n**Rationale:** %s\n\n---\nTo approve, add the `agent:approved` label. To reject, add the `agent:rejected` label.",
