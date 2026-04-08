@@ -98,9 +98,31 @@ Both reviewers catch robustness/error-handling issues (transient error tolerance
 
 Codex found runtime ordering bugs (budget check placement, flag ignored in CLI) that neither Greptile nor CodeRabbit caught. Without Codex data on PR #27, we can't confirm whether this gap persists. Codex hit usage limits on PR #27.
 
+## Review Speed
+
+Greptile consistently delivers results faster than CodeRabbit across both PRs and across re-review rounds.
+
+### Initial Review Latency (time from PR creation/push to first review)
+
+| PR | Files Changed | Greptile | CodeRabbit | Codex |
+|----|--------------|----------|------------|-------|
+| #22 | 16 | **5m 17s** | 8m 5s | 6m 38s |
+| #27 | 16 | **3m 57s** | 5m 36s | N/A (usage limit) |
+
+### Re-Review Latency (time from fix push to review of new changes)
+
+| PR | Round | Greptile | CodeRabbit |
+|----|-------|----------|------------|
+| #27 | Round 2 | **~4m** | ~7m |
+| #27 | Round 3 | **~5m** | N/A (no new comments) |
+
+### Speed Analysis
+
+Greptile is **30-50% faster** than CodeRabbit on initial reviews and re-reviews. Both are fast enough that the review loop doesn't block development — the bottleneck is always the human reviewer, not the bots. However, in an automated pipeline where the responder agent waits for bot reviews (`HITL_BOT_REVIEW_WAIT`), Greptile's speed advantage means the default 120s wait is more than sufficient for Greptile but may occasionally be tight for CodeRabbit on larger PRs.
+
 ## Recommendation
 
-Run all available reviewers in parallel. Total cost is minimal (free tiers or low-cost plans), total latency is under 2 minutes, and no single reviewer catches everything:
+Run all available reviewers in parallel. Total cost is minimal (free tiers or low-cost plans), total latency is under 6 minutes, and no single reviewer catches everything:
 
 | Reviewer | Run For |
 |----------|---------|
