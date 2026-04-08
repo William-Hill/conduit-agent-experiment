@@ -136,7 +136,8 @@ func main() {
 
 	// 7. Run implementer agent
 	log.Printf("Running implementer agent (max %d iterations)...", maxIter)
-	result, err := implementer.RunAgent(ctx, anthropicKey, modelName, repoDir, plan, maxIter)
+	implMaxCost := envFloatOrDefault("IMPL_MAX_COST", 0)
+	result, err := implementer.RunAgent(ctx, anthropicKey, modelName, repoDir, plan, maxIter, implMaxCost)
 	if err != nil {
 		log.Fatalf("agent failed: %v", err)
 	}
@@ -199,6 +200,18 @@ func envOrDefault(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func envFloatOrDefault(key string, fallback float64) float64 {
+	s := os.Getenv(key)
+	if s == "" {
+		return fallback
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return fallback
+	}
+	return v
 }
 
 func readTopRankedIssue(dir string) (*triage.RankedIssue, error) {

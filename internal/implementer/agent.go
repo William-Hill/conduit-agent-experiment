@@ -8,6 +8,7 @@ import (
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/cost"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/planner"
 )
 
@@ -24,15 +25,17 @@ Do NOT explore the codebase. Do NOT read files unless a build fails. Just write 
 
 // Result holds the outcome of an implementer agent run.
 type Result struct {
-	Summary      string
-	Iterations   int
-	InputTokens  int
-	OutputTokens int
+	Summary        string
+	Iterations     int
+	InputTokens    int
+	OutputTokens   int
+	BudgetExceeded bool
 }
 
 // RunAgent executes the implementer agent against a cloned repo.
 // Model can be overridden (e.g. "claude-haiku-4-5-20251001"); defaults to Haiku 4.5.
-func RunAgent(ctx context.Context, apiKey, modelName, repoDir string, plan *planner.ImplementationPlan, maxIterations int) (*Result, error) {
+// maxCost is the budget cap in USD for this step (0 means no limit).
+func RunAgent(ctx context.Context, apiKey, modelName, repoDir string, plan *planner.ImplementationPlan, maxIterations int, maxCost float64) (*Result, error) {
 	if modelName == "" {
 		modelName = string(anthropic.ModelClaudeHaiku4_5)
 	}
@@ -72,6 +75,7 @@ func RunAgent(ctx context.Context, apiKey, modelName, repoDir string, plan *plan
 	})
 
 	var totalInput, totalOutput int64
+	var budgetExceeded bool
 
 	var finalMsg *anthropic.BetaMessage
 	for msg, err := range runner.All(ctx) {
@@ -87,13 +91,23 @@ func RunAgent(ctx context.Context, apiKey, modelName, repoDir string, plan *plan
 				log.Printf("  [iter %d] tool: %s", runner.IterationCount(), block.Name)
 			}
 		}
+		// Check budget after each iteration.
+		if maxCost > 0 {
+			spent := cost.Calculate(modelName, int(totalInput), int(totalOutput))
+			if spent > maxCost {
+				log.Printf("  implementer budget exceeded: $%.4f > cap $%.4f, stopping", spent, maxCost)
+				budgetExceeded = true
+				break
+			}
+		}
 	}
 
 	return &Result{
-		Summary:      extractText(finalMsg),
-		Iterations:   runner.IterationCount(),
-		InputTokens:  int(totalInput),
-		OutputTokens: int(totalOutput),
+		Summary:        extractText(finalMsg),
+		Iterations:     runner.IterationCount(),
+		InputTokens:    int(totalInput),
+		OutputTokens:   int(totalOutput),
+		BudgetExceeded: budgetExceeded,
 	}, nil
 }
 
