@@ -51,30 +51,31 @@ func main() {
 	for iteration := 1; iteration <= maxIterations; iteration++ {
 		log.Printf("=== Responder iteration %d/%d ===", iteration, maxIterations)
 
-		// 1. Fetch review comments
 		commentData, err := fetchPRComments(ctx, adapter, prNum)
 		if err != nil {
-			log.Fatalf("fetching comments: %v", err)
+			log.Printf("iteration %d: fetching comments failed: %v, skipping", iteration, err)
+			continue
 		}
 
-		// 2. Check for approval
 		reviewData, err := fetchPRReviews(ctx, adapter, prNum)
 		if err != nil {
-			log.Fatalf("fetching reviews: %v", err)
+			log.Printf("iteration %d: fetching reviews failed: %v, skipping", iteration, err)
+			continue
 		}
 		approved, err := responder.HasApproval(reviewData)
 		if err != nil {
-			log.Fatalf("parsing reviews: %v", err)
+			log.Printf("iteration %d: parsing reviews failed: %v, skipping", iteration, err)
+			continue
 		}
 		if approved {
 			log.Printf("PR #%d has been approved, exiting", prNum)
 			return
 		}
 
-		// 3. Parse and classify comments
 		comments, err := responder.ParseInlineComments(commentData)
 		if err != nil {
-			log.Fatalf("parsing comments: %v", err)
+			log.Printf("iteration %d: parsing comments failed: %v, skipping", iteration, err)
+			continue
 		}
 		actionable := responder.Classify(comments)
 		if len(actionable) == 0 {
@@ -83,59 +84,60 @@ func main() {
 		}
 		log.Printf("Found %d actionable comments (of %d total)", len(actionable), len(comments))
 
-		// 4. Get the PR branch name
 		branch, err := getPRBranch(ctx, adapter, prNum)
 		if err != nil {
-			log.Fatalf("getting PR branch: %v", err)
+			log.Printf("iteration %d: getting PR branch failed: %v, skipping", iteration, err)
+			continue
 		}
 
-		// 5. Clone and checkout the PR branch
-		repoDir, err := cloneAndCheckout(ctx, owner, repo, forkOwner, branch)
+		repoDir, err := cloneAndCheckout(ctx, forkOwner, repo, branch)
 		if err != nil {
-			log.Fatalf("cloning repo: %v", err)
+			log.Printf("iteration %d: cloning repo failed: %v, skipping", iteration, err)
+			continue
 		}
 
-		// 6. Run fix agent
 		prompt := responder.BuildFixPrompt(actionable)
 		plan := &planner.ImplementationPlan{Markdown: prompt}
 		log.Printf("Running fix agent on %d comments...", len(actionable))
 
 		result, err := implementer.RunAgent(ctx, anthropicKey, modelName, repoDir, plan, maxToolIter, 0)
 		if err != nil {
-			log.Fatalf("fix agent failed: %v", err)
+			log.Printf("iteration %d: fix agent failed: %v, skipping", iteration, err)
+			os.RemoveAll(repoDir)
+			continue
 		}
 		log.Printf("Fix agent completed in %d iterations", result.Iterations)
 		log.Printf("Summary: %s", result.Summary)
 
-		// 7. Check for changes
-		diffCmd := exec.CommandContext(ctx, "git", "diff", "--stat")
-		diffCmd.Dir = repoDir
-		diffOutput, err := diffCmd.Output()
-		if err != nil {
-			log.Fatalf("git diff failed: %v", err)
-		}
 		statusCmd := exec.CommandContext(ctx, "git", "status", "--porcelain")
 		statusCmd.Dir = repoDir
 		statusOutput, err := statusCmd.Output()
 		if err != nil {
-			log.Fatalf("git status failed: %v", err)
+			log.Printf("iteration %d: git status failed: %v, skipping", iteration, err)
+			os.RemoveAll(repoDir)
+			continue
 		}
-		if len(diffOutput) == 0 && len(statusOutput) == 0 {
+		if len(statusOutput) == 0 {
 			log.Printf("No changes produced, skipping push")
 			os.RemoveAll(repoDir)
 			continue
 		}
-		log.Printf("Changes:\n%s", string(diffOutput))
 
-		// 8. Commit and push
+		diffCmd := exec.CommandContext(ctx, "git", "diff", "--stat")
+		diffCmd.Dir = repoDir
+		if diffOutput, err := diffCmd.Output(); err == nil && len(diffOutput) > 0 {
+			log.Printf("Changes:\n%s", string(diffOutput))
+		}
+
 		commitMsg := fmt.Sprintf("fix: address review comments (responder iteration %d)", iteration)
 		if err := commitAndPush(ctx, repoDir, branch, commitMsg); err != nil {
-			log.Fatalf("commit and push failed: %v", err)
+			log.Printf("iteration %d: commit and push failed: %v, skipping", iteration, err)
+			os.RemoveAll(repoDir)
+			continue
 		}
 		log.Printf("Pushed iteration %d", iteration)
 		os.RemoveAll(repoDir)
 
-		// 9. Wait for new reviews
 		if iteration < maxIterations {
 			log.Printf("Waiting %ds for new reviews...", waitSeconds)
 			time.Sleep(time.Duration(waitSeconds) * time.Second)
@@ -152,7 +154,11 @@ func fetchPRComments(ctx context.Context, adapter *github.Adapter, prNum int) ([
 		fmt.Sprintf("repos/%s/%s/pulls/%d/comments", adapter.Owner, adapter.Repo, prNum),
 	}
 	cmd := exec.CommandContext(ctx, "gh", args...)
-	return cmd.Output()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("gh api: %w\n%s", err, out)
+	}
+	return out, nil
 }
 
 func fetchPRReviews(ctx context.Context, adapter *github.Adapter, prNum int) ([]byte, error) {
@@ -163,7 +169,11 @@ func fetchPRReviews(ctx context.Context, adapter *github.Adapter, prNum int) ([]
 		"--jq", ".reviews",
 	}
 	cmd := exec.CommandContext(ctx, "gh", args...)
-	return cmd.Output()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("gh pr view: %w\n%s", err, out)
+	}
+	return out, nil
 }
 
 func getPRBranch(ctx context.Context, adapter *github.Adapter, prNum int) (string, error) {
@@ -174,24 +184,26 @@ func getPRBranch(ctx context.Context, adapter *github.Adapter, prNum int) (strin
 		"--jq", ".headRefName",
 	}
 	cmd := exec.CommandContext(ctx, "gh", args...)
-	out, err := cmd.Output()
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("gh pr view: %w\n%s", err, out)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
 
-func cloneAndCheckout(ctx context.Context, owner, repo, forkOwner, branch string) (string, error) {
+// cloneAndCheckout uses gh repo clone for automatic credential injection.
+func cloneAndCheckout(ctx context.Context, forkOwner, repo, branch string) (string, error) {
 	dir, err := os.MkdirTemp("", "responder-*")
 	if err != nil {
 		return "", err
 	}
 
-	repoURL := fmt.Sprintf("https://github.com/%s/%s.git", forkOwner, repo)
-	cmd := exec.CommandContext(ctx, "git", "clone", "--branch", branch, "--depth", "50", repoURL, dir)
+	cmd := exec.CommandContext(ctx, "gh", "repo", "clone",
+		fmt.Sprintf("%s/%s", forkOwner, repo), dir,
+		"--", "--branch", branch, "--depth", "50")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		os.RemoveAll(dir)
-		return "", fmt.Errorf("git clone: %w\n%s", err, out)
+		return "", fmt.Errorf("gh repo clone: %w\n%s", err, out)
 	}
 
 	return dir, nil
@@ -199,6 +211,8 @@ func cloneAndCheckout(ctx context.Context, owner, repo, forkOwner, branch string
 
 func commitAndPush(ctx context.Context, repoDir, branch, commitMsg string) error {
 	cmds := [][]string{
+		{"git", "config", "user.name", "conduit-agent-responder"},
+		{"git", "config", "user.email", "conduit-agent-responder@noreply.github.com"},
 		{"git", "add", "-A"},
 		{"git", "commit", "-m", commitMsg},
 		{"git", "push", "origin", branch},
