@@ -14,6 +14,15 @@ type ActionableComment struct {
 	Severity string // "critical", "major", "minor"
 }
 
+var sevOrder = map[string]int{"critical": 0, "major": 1, "minor": 2}
+
+func sevRank(sev string) int {
+	if v, ok := sevOrder[sev]; ok {
+		return v
+	}
+	return 3
+}
+
 // Classify filters out addressed and nitpick comments, normalizes severity,
 // and groups remaining actionable comments by file, sorted by severity.
 func Classify(comments []ReviewComment) []ActionableComment {
@@ -23,7 +32,7 @@ func Classify(comments []ReviewComment) []ActionableComment {
 		if c.Status == "addressed" {
 			continue
 		}
-		sev := extractSeverity(c.Body, c.Author)
+		sev := extractSeverity(c.Body)
 		if sev == "nitpick" || sev == "skip" {
 			continue
 		}
@@ -36,15 +45,8 @@ func Classify(comments []ReviewComment) []ActionableComment {
 		})
 	}
 
-	sevOrder := map[string]int{"critical": 0, "major": 1, "minor": 2}
-	rank := func(sev string) int {
-		if v, ok := sevOrder[sev]; ok {
-			return v
-		}
-		return 3
-	}
 	sort.Slice(result, func(i, j int) bool {
-		si, sj := rank(result[i].Severity), rank(result[j].Severity)
+		si, sj := sevRank(result[i].Severity), sevRank(result[j].Severity)
 		if si != sj {
 			return si < sj
 		}
@@ -58,16 +60,17 @@ func Classify(comments []ReviewComment) []ActionableComment {
 }
 
 // extractSeverity normalizes severity across Greptile, CodeRabbit, and Codex.
-func extractSeverity(body, author string) string {
+func extractSeverity(body string) string {
 	lower := strings.ToLower(body)
 
 	if strings.Contains(lower, "nitpick") {
 		return "nitpick"
 	}
-	if strings.Contains(lower, "walkthrough") || strings.Contains(lower, "📝 walkthrough") {
+	if strings.Contains(lower, "walkthrough") {
 		return "skip"
 	}
 
+	// Greptile P-badges (case-sensitive, checked on original body)
 	if strings.Contains(body, "P1") || strings.Contains(body, "p1.svg") {
 		return "critical"
 	}
@@ -78,6 +81,7 @@ func extractSeverity(body, author string) string {
 		return "nitpick"
 	}
 
+	// CodeRabbit severity markers
 	if strings.Contains(lower, "🔴 critical") || strings.Contains(lower, "critical_") {
 		return "critical"
 	}
@@ -86,13 +90,6 @@ func extractSeverity(body, author string) string {
 	}
 	if strings.Contains(lower, "🟡 minor") {
 		return "minor"
-	}
-
-	if strings.Contains(body, "P1-") {
-		return "critical"
-	}
-	if strings.Contains(body, "P2-") {
-		return "major"
 	}
 
 	if strings.Contains(body, "⚠️") || strings.Contains(lower, "potential issue") {
