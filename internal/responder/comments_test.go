@@ -80,3 +80,66 @@ func TestParseReviewsNoApproval(t *testing.T) {
 		t.Error("expected approved=false when no APPROVED review")
 	}
 }
+
+func TestGreptileCommentSeverity(t *testing.T) {
+	raw := `[{
+		"user": {"login": "greptile-apps[bot]"},
+		"path": "internal/cost/budget.go",
+		"line": 27,
+		"body": "<a href=\"#\"><img alt=\"P1\" src=\"https://greptile-static-assets.s3.amazonaws.com/badges/p1.svg\" align=\"top\"></a> **PLANNER_MAX_COST is loaded but never enforced**\n\nLoadBudget reads PLANNER_MAX_COST but no CheckStep call exists."
+	}]`
+
+	comments, err := ParseInlineComments([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	actionable := Classify(comments)
+	if len(actionable) != 1 {
+		t.Fatalf("got %d, want 1", len(actionable))
+	}
+	if actionable[0].Severity != "critical" {
+		t.Errorf("Greptile P1 should be critical, got %q", actionable[0].Severity)
+	}
+}
+
+func TestCodeRabbitCommentSeverity(t *testing.T) {
+	raw := `[{
+		"user": {"login": "coderabbitai[bot]"},
+		"path": "internal/archivist/dossier_test.go",
+		"line": 38,
+		"body": "_⚠️ Potential issue_ | _🟠 Major_\n\n**Avoid potential index panic.**"
+	}]`
+
+	comments, err := ParseInlineComments([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	actionable := Classify(comments)
+	if len(actionable) != 1 {
+		t.Fatalf("got %d, want 1", len(actionable))
+	}
+	if actionable[0].Severity != "major" {
+		t.Errorf("CodeRabbit Major should be major, got %q", actionable[0].Severity)
+	}
+}
+
+func TestCodexCommentSeverity(t *testing.T) {
+	raw := `[{
+		"user": {"login": "chatgpt-codex-connector[bot]"},
+		"path": "cmd/implementer/main.go",
+		"line": 141,
+		"body": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Stop CLI flow when budget exceeded**"
+	}]`
+
+	comments, err := ParseInlineComments([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	actionable := Classify(comments)
+	if len(actionable) != 1 {
+		t.Fatalf("got %d, want 1", len(actionable))
+	}
+	if actionable[0].Severity != "major" {
+		t.Errorf("Codex P2 should be major, got %q", actionable[0].Severity)
+	}
+}
