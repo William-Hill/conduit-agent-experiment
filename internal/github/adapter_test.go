@@ -350,6 +350,65 @@ func TestGetPRState(t *testing.T) {
 	}
 }
 
+func TestGetReviewThreads(t *testing.T) {
+	mockOutput := `{
+		"data": {
+			"repository": {
+				"pullRequest": {
+					"reviewThreads": {
+						"nodes": [
+							{"id": "RT_1", "isResolved": false, "comments": {"nodes": [{"body": "Fix this"}]}},
+							{"id": "RT_2", "isResolved": true, "comments": {"nodes": [{"body": "Already fixed"}]}}
+						]
+					}
+				}
+			}
+		}
+	}`
+	_, scriptPath := writeMockScript(t, "#!/bin/sh\ncat <<'ENDOFOUTPUT'\n"+mockOutput+"\nENDOFOUTPUT\n")
+
+	a := &Adapter{
+		Owner:  "testowner",
+		Repo:   "testrepo",
+		GHPath: scriptPath,
+	}
+
+	threads, err := a.GetReviewThreads(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("GetReviewThreads() error: %v", err)
+	}
+
+	if len(threads) != 2 {
+		t.Fatalf("expected 2 threads, got %d", len(threads))
+	}
+	if threads[0].ID != "RT_1" {
+		t.Errorf("threads[0].ID = %q, want %q", threads[0].ID, "RT_1")
+	}
+	if threads[0].IsResolved {
+		t.Error("threads[0] should not be resolved")
+	}
+	if !threads[1].IsResolved {
+		t.Error("threads[1] should be resolved")
+	}
+}
+
+func TestResolveThread(t *testing.T) {
+	script := `#!/bin/sh
+echo '{"data":{"resolveReviewThread":{"thread":{"id":"RT_1"}}}}'
+`
+	_, scriptPath := writeMockScript(t, script)
+
+	a := &Adapter{
+		Owner:  "testowner",
+		Repo:   "testrepo",
+		GHPath: scriptPath,
+	}
+
+	if err := a.ResolveThread(context.Background(), "RT_1"); err != nil {
+		t.Fatalf("ResolveThread() error: %v", err)
+	}
+}
+
 func TestCreateBranchAndPush_ForkRemote(t *testing.T) {
 	// Set up a real git repo in a temp dir
 	repoDir := t.TempDir()
