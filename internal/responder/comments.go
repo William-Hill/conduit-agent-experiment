@@ -57,18 +57,28 @@ func ParseInlineComments(data []byte) ([]ReviewComment, error) {
 }
 
 // HasApproval parses the JSON output of gh pr view --json reviews and returns
-// true if any review has state "APPROVED".
+// true if the latest review from any author is "APPROVED" and no author's
+// latest review is "CHANGES_REQUESTED".
 func HasApproval(data []byte) (bool, error) {
 	var reviews []ghReview
 	if err := json.Unmarshal(data, &reviews); err != nil {
 		return false, err
 	}
+	// Track the most recent state per author (reviews are ordered chronologically).
+	latest := make(map[string]string)
 	for _, r := range reviews {
-		if r.State == "APPROVED" {
-			return true, nil
+		latest[r.Author.Login] = r.State
+	}
+	approved := false
+	for _, state := range latest {
+		if state == "CHANGES_REQUESTED" {
+			return false, nil
+		}
+		if state == "APPROVED" {
+			approved = true
 		}
 	}
-	return false, nil
+	return approved, nil
 }
 
 // isAddressed detects comments that review tools have marked as resolved.
