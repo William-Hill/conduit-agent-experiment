@@ -24,8 +24,10 @@ Do NOT explore the codebase. Do NOT read files unless a build fails. Just write 
 
 // Result holds the outcome of an implementer agent run.
 type Result struct {
-	Summary    string
-	Iterations int
+	Summary      string
+	Iterations   int
+	InputTokens  int
+	OutputTokens int
 }
 
 // RunAgent executes the implementer agent against a cloned repo.
@@ -69,12 +71,16 @@ func RunAgent(ctx context.Context, apiKey, modelName, repoDir string, plan *plan
 		MaxIterations: maxIterations,
 	})
 
+	var totalInput, totalOutput int64
+
 	var finalMsg *anthropic.BetaMessage
 	for msg, err := range runner.All(ctx) {
 		if err != nil {
 			return nil, fmt.Errorf("agent run failed at iteration %d: %w", runner.IterationCount(), err)
 		}
 		finalMsg = msg
+		totalInput += msg.Usage.InputTokens
+		totalOutput += msg.Usage.OutputTokens
 		// Log tool calls for progress visibility
 		for _, block := range msg.Content {
 			if block.Type == "tool_use" {
@@ -84,8 +90,10 @@ func RunAgent(ctx context.Context, apiKey, modelName, repoDir string, plan *plan
 	}
 
 	return &Result{
-		Summary:    extractText(finalMsg),
-		Iterations: runner.IterationCount(),
+		Summary:      extractText(finalMsg),
+		Iterations:   runner.IterationCount(),
+		InputTokens:  int(totalInput),
+		OutputTokens: int(totalOutput),
 	}, nil
 }
 

@@ -32,3 +32,18 @@ func TestBuildPromptNilPlan(t *testing.T) {
 		t.Error("nil plan should return empty string")
 	}
 }
+
+func TestResultTokenFields(t *testing.T) {
+	r := Result{
+		Summary:      "wrote 2 files",
+		Iterations:   3,
+		InputTokens:  1500,
+		OutputTokens: 800,
+	}
+	if r.InputTokens != 1500 {
+		t.Errorf("InputTokens = %d, want 1500", r.InputTokens)
+	}
+	if r.OutputTokens != 800 {
+		t.Errorf("OutputTokens = %d, want 800", r.OutputTokens)
+	}
+}
