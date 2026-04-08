@@ -12,6 +12,7 @@ import (
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/agents"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/config"
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/cost"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/evaluation"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/execution"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/github"
@@ -33,6 +34,7 @@ type WorkflowResult struct {
 	Evaluation      models.Evaluation
 	LLMCalls        []models.LLMCall
 	PRURL           string
+	Budget          cost.Budget
 }
 
 // RunWorkflow executes the full agent pipeline for a task.
@@ -73,6 +75,8 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 		}, nil
 	}
 
+	budget := cost.LoadBudget()
+
 	// --- 2. Repo walk + keyword dossier ---
 	inv, err := ingest.WalkRepo(cfg.Target.RepoPath)
 	if err != nil {
@@ -91,6 +95,27 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 	}
 	dossier = enhanced
 	agentsInvoked = append(agentsInvoked, "archivist")
+
+	if err := budget.CheckStep("archivist", llmCalls); err != nil {
+		run := models.Run{
+			ID: runID, TaskID: task.ID, StartedAt: startTime,
+			AgentsInvoked: agentsInvoked, TriageDecision: triageDecision.Decision,
+			TriageReason: err.Error(), FinalStatus: models.RunStatusFailed,
+			HumanDecision: models.HumanDecisionPending, LLMCalls: llmCalls,
+			EndedAt: time.Now(),
+		}
+		return &WorkflowResult{Run: run, Dossier: dossier, Task: task, TriageDecision: triageDecision, LLMCalls: llmCalls, Budget: budget}, nil
+	}
+	if err := budget.CheckTotal(llmCalls); err != nil {
+		run := models.Run{
+			ID: runID, TaskID: task.ID, StartedAt: startTime,
+			AgentsInvoked: agentsInvoked, TriageDecision: triageDecision.Decision,
+			TriageReason: err.Error(), FinalStatus: models.RunStatusFailed,
+			HumanDecision: models.HumanDecisionPending, LLMCalls: llmCalls,
+			EndedAt: time.Now(),
+		}
+		return &WorkflowResult{Run: run, Dossier: dossier, Task: task, TriageDecision: triageDecision, LLMCalls: llmCalls, Budget: budget}, nil
+	}
 
 	// --- 4. Triage re-check after archivist ---
 	run := models.Run{
@@ -144,6 +169,25 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 	}
 	llmCalls = append(llmCalls, planCall)
 	agentsInvoked = append(agentsInvoked, "implementer")
+
+	if err := budget.CheckStep("implementer", llmCalls); err != nil {
+		run.AgentsInvoked = agentsInvoked
+		run.FinalStatus = models.RunStatusFailed
+		run.TriageReason = err.Error()
+		run.EndedAt = time.Now()
+		run.LLMCalls = llmCalls
+		run.ImplementerPlan = plan.PlanSummary
+		return &WorkflowResult{Run: run, Dossier: dossier, Task: task, TriageDecision: triageDecision, PatchPlan: plan, LLMCalls: llmCalls, Budget: budget}, nil
+	}
+	if err := budget.CheckTotal(llmCalls); err != nil {
+		run.AgentsInvoked = agentsInvoked
+		run.FinalStatus = models.RunStatusFailed
+		run.TriageReason = err.Error()
+		run.EndedAt = time.Now()
+		run.LLMCalls = llmCalls
+		run.ImplementerPlan = plan.PlanSummary
+		return &WorkflowResult{Run: run, Dossier: dossier, Task: task, TriageDecision: triageDecision, PatchPlan: plan, LLMCalls: llmCalls, Budget: budget}, nil
+	}
 
 	if err := policy.CheckPatchBreadth(plan.TotalFiles()); err != nil {
 		run.AgentsInvoked = agentsInvoked
@@ -253,6 +297,7 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 			FailureDetail:  fmt.Sprintf("all %d file(s) failed generation: %s", totalFiles, strings.Join(failedFiles, ", ")),
 			TotalDurationMs: time.Since(startTime).Milliseconds(),
 			LLMCalls:        len(llmCalls),
+			LLMTokensUsed:   cost.TotalTokens(llmCalls),
 		})
 
 		return &WorkflowResult{
@@ -295,6 +340,23 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 		return nil, fmt.Errorf("architect review: %w", err)
 	}
 	agentsInvoked = append(agentsInvoked, "architect")
+
+	if err := budget.CheckStep("architect", llmCalls); err != nil {
+		run.AgentsInvoked = agentsInvoked
+		run.FinalStatus = models.RunStatusFailed
+		run.TriageReason = err.Error()
+		run.EndedAt = time.Now()
+		run.LLMCalls = llmCalls
+		return &WorkflowResult{Run: run, Dossier: dossier, Task: task, TriageDecision: triageDecision, PatchPlan: plan, ArchitectReview: architectReview, LLMCalls: llmCalls, Budget: budget}, nil
+	}
+	if err := budget.CheckTotal(llmCalls); err != nil {
+		run.AgentsInvoked = agentsInvoked
+		run.FinalStatus = models.RunStatusFailed
+		run.TriageReason = err.Error()
+		run.EndedAt = time.Now()
+		run.LLMCalls = llmCalls
+		return &WorkflowResult{Run: run, Dossier: dossier, Task: task, TriageDecision: triageDecision, PatchPlan: plan, ArchitectReview: architectReview, LLMCalls: llmCalls, Budget: budget}, nil
+	}
 
 	// --- 11. GitHub PR ---
 	prURL := ""
@@ -345,6 +407,7 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 		PRURL:               prURL,
 		TotalDurationMs:     time.Since(startTime).Milliseconds(),
 		LLMCalls:            len(llmCalls),
+		LLMTokensUsed:       cost.TotalTokens(llmCalls),
 	})
 
 	// --- 13. Finalize run ---
@@ -379,6 +442,7 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 		Evaluation:      eval,
 		LLMCalls:        llmCalls,
 		PRURL:           prURL,
+		Budget:          budget,
 	}, nil
 }
 
