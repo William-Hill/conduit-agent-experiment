@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/github"
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/hitl"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/implementer"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/planner"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/responder"
@@ -136,6 +137,28 @@ func main() {
 			continue
 		}
 		log.Printf("Pushed iteration %d", iteration)
+
+		// Resolve addressed threads (HITL)
+		hitlCfg := hitl.LoadConfig()
+		hitlAdapter := &github.HITLAdapter{Adapter: adapter}
+		if hitlCfg.ResolveBotComments {
+			resolved, resolveErr := hitl.ResolveAddressedThreads(ctx, hitlAdapter, prNum)
+			if resolveErr != nil {
+				log.Printf("Warning: failed to resolve threads: %v", resolveErr)
+			} else if resolved > 0 {
+				log.Printf("Resolved %d review threads", resolved)
+			}
+		}
+
+		// Re-trigger bot reviews after pushing fixes
+		if len(hitlCfg.BotReviewers) > 0 {
+			if triggerErr := hitl.TriggerBotReviews(ctx, hitlAdapter, prNum, hitlCfg.BotReviewers); triggerErr != nil {
+				log.Printf("Warning: failed to re-trigger bot reviews: %v", triggerErr)
+			} else {
+				log.Printf("Re-triggered bot reviews")
+			}
+		}
+
 		os.RemoveAll(repoDir)
 
 		if iteration < maxIterations {
