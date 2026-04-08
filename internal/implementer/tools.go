@@ -77,14 +77,25 @@ func safePath(repoDir, relPath string) (string, error) {
 	}
 	realFull, err := filepath.EvalSymlinks(full)
 	if err != nil {
-		// File may not exist yet (write_file) — fall back to parent dir check.
-		parentDir := filepath.Dir(full)
-		realParent, pErr := filepath.EvalSymlinks(parentDir)
-		if pErr != nil {
-			return full, nil // parent doesn't exist yet either, will be created
-		}
-		if !strings.HasPrefix(realParent, realRoot+string(filepath.Separator)) && realParent != realRoot {
-			return "", fmt.Errorf("path %q escapes repository root via symlink", relPath)
+		// File may not exist yet (write_file) — walk up to the nearest existing
+		// ancestor and verify it resolves inside the repo root.
+		check := filepath.Dir(full)
+		for {
+			if _, statErr := os.Lstat(check); statErr == nil {
+				realAncestor, pErr := filepath.EvalSymlinks(check)
+				if pErr != nil {
+					return "", fmt.Errorf("resolving ancestor %q: %w", check, pErr)
+				}
+				if realAncestor != realRoot && !strings.HasPrefix(realAncestor, realRoot+string(filepath.Separator)) {
+					return "", fmt.Errorf("path %q escapes repository root via symlink", relPath)
+				}
+				return full, nil
+			}
+			next := filepath.Dir(check)
+			if next == check {
+				break // reached filesystem root
+			}
+			check = next
 		}
 		return full, nil
 	}
@@ -181,7 +192,7 @@ func NewTools(repoDir string) ([]anthropic.BetaTool, error) {
 				}
 			}
 
-			args := []string{"-r", "-n"}
+			args := []string{"-r", "-n", "--exclude-dir=.git"}
 			if input.Glob != "" {
 				args = append(args, "--include="+input.Glob)
 			}
@@ -259,7 +270,15 @@ func NewTools(repoDir string) ([]anthropic.BetaTool, error) {
 
 			cmd := exec.CommandContext(cmdCtx, base, argv[1:]...)
 			cmd.Dir = repoDir
-			cmd.Env = append(os.Environ(), "HOME="+os.Getenv("HOME"))
+			// Minimal environment — only what Go toolchain needs. Prevents
+			// malicious repos from exfiltrating API keys or credentials.
+			cmd.Env = []string{
+				"PATH=" + os.Getenv("PATH"),
+				"HOME=" + os.Getenv("HOME"),
+				"GOPATH=" + os.Getenv("GOPATH"),
+				"GOROOT=" + os.Getenv("GOROOT"),
+				"TMPDIR=" + os.TempDir(),
+			}
 
 			var stdout, stderr bytes.Buffer
 			cmd.Stdout = &stdout

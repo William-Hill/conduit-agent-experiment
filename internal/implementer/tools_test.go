@@ -159,10 +159,14 @@ func TestReadFileSymlinkEscape(t *testing.T) {
 
 	// Create a file outside the repo dir
 	outsideDir := t.TempDir()
-	os.WriteFile(filepath.Join(outsideDir, "secret.txt"), []byte("sensitive data"), 0o644)
+	if err := os.WriteFile(filepath.Join(outsideDir, "secret.txt"), []byte("sensitive data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create a symlink inside dir that points outside
-	os.Symlink(outsideDir, filepath.Join(dir, "escape"))
+	if err := os.Symlink(outsideDir, filepath.Join(dir, "escape")); err != nil {
+		t.Skipf("symlink unsupported in this environment: %v", err)
+	}
 
 	tools, err := NewTools(dir)
 	if err != nil {
@@ -173,6 +177,9 @@ func TestReadFileSymlinkEscape(t *testing.T) {
 	result := execTool(t, tool, `{"path":"escape/secret.txt"}`)
 	if !strings.Contains(result, "Error:") {
 		t.Errorf("expected error for symlink escape, got: %q", result)
+	}
+	if !strings.Contains(result, "escapes") {
+		t.Errorf("expected escape-specific error, got: %q", result)
 	}
 }
 

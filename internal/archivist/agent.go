@@ -243,7 +243,7 @@ func readFileContent(repoDir, relPath string) string {
 	defer f.Close()
 
 	var sb strings.Builder
-	buf := make([]byte, 0, 64*1024)
+	var buf []byte
 	remaining := make([]byte, 0, 4096)
 	lines := 0
 	const maxLines = 500
