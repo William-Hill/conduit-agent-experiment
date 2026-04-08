@@ -37,8 +37,14 @@ func Classify(comments []ReviewComment) []ActionableComment {
 	}
 
 	sevOrder := map[string]int{"critical": 0, "major": 1, "minor": 2}
+	rank := func(sev string) int {
+		if v, ok := sevOrder[sev]; ok {
+			return v
+		}
+		return 3
+	}
 	sort.Slice(result, func(i, j int) bool {
-		si, sj := sevOrder[result[i].Severity], sevOrder[result[j].Severity]
+		si, sj := rank(result[i].Severity), rank(result[j].Severity)
 		if si != sj {
 			return si < sj
 		}
