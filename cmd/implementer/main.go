@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/archivist"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/cost"
@@ -17,6 +19,7 @@ import (
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/hitl"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/implementer"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/planner"
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/responder"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/triage"
 )
 
@@ -244,6 +247,121 @@ func main() {
 	}
 
 	log.Printf("Draft PR created: %s", prURL)
+
+	// 10. Gate 3: Bot review loop + human approval (HITL)
+	if hitlCfg.Gate3Enabled {
+		log.Printf("[HITL] Gate 3 active — starting bot review loop on PR %s", prURL)
+
+		prNum := extractPRNumber(prURL)
+		if prNum == 0 {
+			log.Fatalf("[HITL] could not extract PR number from URL: %s", prURL)
+		}
+
+		hitlAdapter := &github.HITLAdapter{Adapter: adapter}
+
+		for botIter := 1; botIter <= hitlCfg.BotMaxIterations; botIter++ {
+			log.Printf("[HITL] Bot review iteration %d/%d", botIter, hitlCfg.BotMaxIterations)
+
+			// Trigger bot reviews
+			if err := hitl.TriggerBotReviews(ctx, hitlAdapter, prNum, hitlCfg.BotReviewers); err != nil {
+				log.Printf("[HITL] Warning: failed to trigger bot reviews: %v", err)
+			}
+
+			// Wait for bot reviews to arrive
+			log.Printf("[HITL] Waiting %v for bot reviews...", hitlCfg.BotReviewWait)
+			time.Sleep(hitlCfg.BotReviewWait)
+
+			// Fetch and classify review comments
+			commentData, err := fetchPRComments(ctx, adapter, prNum)
+			if err != nil {
+				log.Printf("[HITL] Warning: failed to fetch PR comments: %v", err)
+				continue
+			}
+
+			comments, err := responder.ParseInlineComments(commentData)
+			if err != nil {
+				log.Printf("[HITL] Warning: failed to parse comments: %v", err)
+				continue
+			}
+
+			actionable := responder.Classify(comments)
+			if len(actionable) == 0 {
+				log.Printf("[HITL] No actionable bot comments, bot loop complete")
+				break
+			}
+
+			log.Printf("[HITL] Found %d actionable comments, running fix agent...", len(actionable))
+			prompt := responder.BuildFixPrompt(actionable)
+			fixPlan := &planner.ImplementationPlan{Markdown: prompt}
+
+			fixResult, err := implementer.RunAgent(ctx, anthropicKey, modelName, repoDir, fixPlan, maxIter, implMaxCost)
+			if err != nil {
+				log.Printf("[HITL] Fix agent failed: %v", err)
+				continue
+			}
+			log.Printf("[HITL] Fix agent completed in %d iterations", fixResult.Iterations)
+
+			// Check for changes and push
+			statusCmd := exec.CommandContext(ctx, "git", "status", "--porcelain")
+			statusCmd.Dir = repoDir
+			statusOutput, err := statusCmd.Output()
+			if err != nil || len(statusOutput) == 0 {
+				log.Printf("[HITL] No changes from fix agent")
+				break
+			}
+
+			commitMsg := fmt.Sprintf("fix: address bot review comments (iteration %d)", botIter)
+			pushCmds := [][]string{
+				{"git", "add", "-A"},
+				{"git", "commit", "-m", commitMsg},
+				{"git", "push", "origin", branch},
+			}
+			pushFailed := false
+			for _, args := range pushCmds {
+				cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+				cmd.Dir = repoDir
+				if out, err := cmd.CombinedOutput(); err != nil {
+					log.Printf("[HITL] %s failed: %v\n%s", args[0], err, out)
+					pushFailed = true
+					break
+				}
+			}
+			if pushFailed {
+				continue
+			}
+
+			// Resolve addressed threads
+			if hitlCfg.ResolveBotComments {
+				resolved, err := hitl.ResolveAddressedThreads(ctx, hitlAdapter, prNum)
+				if err != nil {
+					log.Printf("[HITL] Warning: failed to resolve threads: %v", err)
+				} else {
+					log.Printf("[HITL] Resolved %d review threads", resolved)
+				}
+			}
+		}
+
+		// Signal human
+		if err := hitlAdapter.AddLabel(ctx, prNum, hitl.LabelReadyForReview); err != nil {
+			log.Printf("[HITL] Warning: failed to apply ready-for-review label: %v", err)
+		}
+		log.Printf("[HITL] Bot review loop complete. Waiting for human action on PR #%d...", prNum)
+
+		// Wait for human decision
+		action, err := hitl.WaitForPRAction(ctx, hitlAdapter, prNum, hitlCfg.Gate3PollInterval)
+		if err != nil {
+			log.Fatalf("[HITL] Gate 3 error: %v", err)
+		}
+
+		switch action {
+		case "merged", "approved":
+			log.Printf("[HITL] PR #%d %s by human", prNum, action)
+		case "changes_requested":
+			log.Printf("[HITL] PR #%d has changes requested — run `make respond RESPONDER_PR_NUMBER=%d` to address", prNum, prNum)
+		case "closed":
+			log.Printf("[HITL] PR #%d closed by human", prNum)
+		}
+	}
 }
 
 func envOrDefault(key, fallback string) string {
@@ -316,4 +434,29 @@ func cloneRepo(ctx context.Context, owner, repo string) (string, error) {
 		return "", fmt.Errorf("git clone: %w\n%s", err, output)
 	}
 	return dir, nil
+}
+
+func extractPRNumber(prURL string) int {
+	parts := strings.Split(prURL, "/")
+	if len(parts) == 0 {
+		return 0
+	}
+	n, err := strconv.Atoi(parts[len(parts)-1])
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+func fetchPRComments(ctx context.Context, adapter *github.Adapter, prNum int) ([]byte, error) {
+	args := []string{
+		"api",
+		fmt.Sprintf("repos/%s/%s/pulls/%d/comments", adapter.Owner, adapter.Repo, prNum),
+	}
+	cmd := exec.CommandContext(ctx, "gh", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("gh api: %w\n%s", err, out)
+	}
+	return out, nil
 }
