@@ -57,7 +57,7 @@ Three experiments targeting real Conduit issues. All three failed, but each fail
 
 ### The architecture pivot (April 6-7, 2026)
 
-After experiments 01-05 showed that the original architecture (all Gemini Flash, ADK agent loops) was unreliable, we made a significant pivot:
+After experiments 01-03 showed that the original architecture (all Gemini Flash, ADK agent loops) was unreliable, we made a significant pivot:
 
 **Old architecture:** ADK Go agent loops for all roles, Gemini Flash everywhere, JSON output format.
 
@@ -115,7 +115,7 @@ The first successful end-to-end run:
 - **Time:** 3 minutes total
 - **Cost:** $0.06
 - **Result:** [ConduitIO/conduit#2451](https://github.com/ConduitIO/conduit/pull/2451) -- 3 files changed, +73/-39 lines
-- **CI result:** Failed -- hallucinated error constants (same failure mode as experiments 02-05)
+- **CI result:** Failed -- hallucinated error constants (same failure mode as experiments 02-03)
 
 The PR demonstrated the pipeline works mechanically. The CI failure confirmed that hallucinated symbols remain the primary challenge, validating the need for symbol inventory injection into the planner prompt.
 
