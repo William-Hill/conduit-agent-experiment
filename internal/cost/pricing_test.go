@@ -31,6 +31,30 @@ func TestCalculateUnknownModelUsesFallback(t *testing.T) {
 	}
 }
 
+func TestCalculateWithCache(t *testing.T) {
+	// Haiku: $1.00/MTok input, $5.00/MTok output
+	// 100 base input at 1.0x = $0.0001
+	// 5000 cache-create at 1.25x = $0.00625
+	// 10000 cache-read at 0.1x = $0.001
+	// 500 output = $0.0025
+	got := CalculateWithCache("claude-haiku-4-5-20251001", 100, 5000, 10000, 500)
+	want := 0.0001 + 0.00625 + 0.001 + 0.0025
+	if diff := got - want; diff > 1e-9 || diff < -1e-9 {
+		t.Errorf("CalculateWithCache() = %f, want %f", got, want)
+	}
+}
+
+func TestCalculateCallsWithCacheTokens(t *testing.T) {
+	calls := []models.LLMCall{
+		{Model: "claude-haiku-4-5-20251001", InputTokens: 100, OutputTokens: 500, CacheCreationTokens: 5000, CacheReadTokens: 10000},
+	}
+	got := CalculateCalls(calls)
+	want := CalculateWithCache("claude-haiku-4-5-20251001", 100, 5000, 10000, 500)
+	if diff := got - want; diff > 1e-9 || diff < -1e-9 {
+		t.Errorf("CalculateCalls with cache = %f, want %f", got, want)
+	}
+}
+
 func TestCalculateCalls(t *testing.T) {
 	calls := []models.LLMCall{
 		{Model: "gemini-2.5-flash", InputTokens: 1000, OutputTokens: 500},

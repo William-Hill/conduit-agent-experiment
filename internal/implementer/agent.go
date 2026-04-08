@@ -25,11 +25,13 @@ Do NOT explore the codebase. Do NOT read files unless a build fails. Just write 
 
 // Result holds the outcome of an implementer agent run.
 type Result struct {
-	Summary        string
-	Iterations     int
-	InputTokens    int
-	OutputTokens   int
-	BudgetExceeded bool
+	Summary             string
+	Iterations          int
+	InputTokens         int
+	OutputTokens        int
+	CacheCreationTokens int
+	CacheReadTokens     int
+	BudgetExceeded      bool
 }
 
 // RunAgent executes the implementer agent against a cloned repo.
@@ -74,7 +76,7 @@ func RunAgent(ctx context.Context, apiKey, modelName, repoDir string, plan *plan
 		MaxIterations: maxIterations,
 	})
 
-	var totalInput, totalOutput int64
+	var totalInput, totalOutput, totalCacheCreate, totalCacheRead int64
 	var budgetExceeded bool
 
 	var finalMsg *anthropic.BetaMessage
@@ -85,15 +87,17 @@ func RunAgent(ctx context.Context, apiKey, modelName, repoDir string, plan *plan
 		finalMsg = msg
 		totalInput += msg.Usage.InputTokens
 		totalOutput += msg.Usage.OutputTokens
+		totalCacheCreate += msg.Usage.CacheCreationInputTokens
+		totalCacheRead += msg.Usage.CacheReadInputTokens
 		// Log tool calls for progress visibility
 		for _, block := range msg.Content {
 			if block.Type == "tool_use" {
 				log.Printf("  [iter %d] tool: %s", runner.IterationCount(), block.Name)
 			}
 		}
-		// Check budget after each iteration.
+		// Check budget after each iteration, including cache tokens.
 		if maxCost > 0 {
-			spent := cost.Calculate(modelName, int(totalInput), int(totalOutput))
+			spent := cost.CalculateWithCache(modelName, int(totalInput), int(totalCacheCreate), int(totalCacheRead), int(totalOutput))
 			if spent > maxCost {
 				log.Printf("  implementer budget exceeded: $%.4f > cap $%.4f, stopping", spent, maxCost)
 				budgetExceeded = true
@@ -103,11 +107,13 @@ func RunAgent(ctx context.Context, apiKey, modelName, repoDir string, plan *plan
 	}
 
 	return &Result{
-		Summary:        extractText(finalMsg),
-		Iterations:     runner.IterationCount(),
-		InputTokens:    int(totalInput),
-		OutputTokens:   int(totalOutput),
-		BudgetExceeded: budgetExceeded,
+		Summary:             extractText(finalMsg),
+		Iterations:          runner.IterationCount(),
+		InputTokens:         int(totalInput),
+		OutputTokens:        int(totalOutput),
+		CacheCreationTokens: int(totalCacheCreate),
+		CacheReadTokens:     int(totalCacheRead),
+		BudgetExceeded:      budgetExceeded,
 	}, nil
 }
 

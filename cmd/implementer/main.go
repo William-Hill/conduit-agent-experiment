@@ -145,7 +145,10 @@ func main() {
 	log.Printf("Agent completed in %d iterations", result.Iterations)
 	log.Printf("Summary: %s", result.Summary)
 	if result.BudgetExceeded {
-		log.Fatalf("Implementer budget exceeded (IMPL_MAX_COST=$%.4f) — halting before PR creation", implMaxCost)
+		log.Printf("Implementer budget exceeded (IMPL_MAX_COST=$%.4f) — halting before PR creation", implMaxCost)
+		os.RemoveAll(repoDir)
+		os.RemoveAll(dossierDir)
+		os.Exit(1)
 	}
 
 	// 8. Check for changes (staged, unstaged, and untracked)
