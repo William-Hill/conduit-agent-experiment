@@ -196,6 +196,18 @@ Configure these in **Settings** > **Secrets and variables** > **Actions**:
 
 Each run uploads a `run-summary.json` artifact containing: issue number, model, iterations, token usage, estimated cost, and PR URL. Available in the Actions tab under the run's **Artifacts** section (retained 90 days).
 
+## Dashboard
+
+Live at: **https://william-hill.github.io/conduit-agent-experiment/**
+
+The dashboard updates automatically after each pipeline run. It shows:
+- Run history with cost, iterations, and PR links
+- Cost trend chart
+- Token usage breakdown
+- Live pipeline status (requires GitHub token — click the gear icon)
+
+To trigger a run from the dashboard, configure a GitHub PAT with `repo` and `actions` scope via the settings gear icon.
+
 ## Troubleshooting
 
 **Push rejected (branch already exists)**

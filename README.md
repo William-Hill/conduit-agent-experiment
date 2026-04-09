@@ -123,6 +123,7 @@ make test
 - **[Experiments](docs/experiments/)** -- structured reports from each pipeline run
 - **[Design](docs/design.md)** -- full PRD, hypotheses, architecture, and cost model
 - **[ADRs](docs/adr/)** -- architecture decision records
+- **[Pipeline Dashboard](https://william-hill.github.io/conduit-agent-experiment/)** -- live run history, cost trends, and pipeline control
 
 ## Status
 
