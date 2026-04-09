@@ -337,14 +337,6 @@ func (a *Adapter) upsertWithDepth(
 	}
 }
 
-// stateOf returns a human-readable state for the pr, or "none" when pr is nil.
-func stateOf(pr *prSummary) string {
-	if pr == nil {
-		return "none"
-	}
-	return pr.State
-}
-
 // updateExisting commits, force-pushes, and posts a timestamped "Updated by
 // automated run" comment on the existing open PR.
 func (a *Adapter) updateExisting(
