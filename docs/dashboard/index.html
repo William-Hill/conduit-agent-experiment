@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>conduit-agent-experiment — Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green:    #4ecca3;
+      --blue:     #7aa2f7;
+      --purple:   #a78bfa;
+      --amber:    #e8b931;
+      --red:      #f7768e;
+      --bg-dark:  #0f0f1a;
+      --bg-card:  #1a1a2e;
+      --border:   #2a2a4a;
+      --text-pri: #e0e0e0;
+      --text-sec: #888888;
+      --text-mut: #555555;
+      --font: -apple-system, BlinkMacSystemFont, 'SF Mono', 'Fira Code', monospace;
+    }
+
+    html, body {
+      background: var(--bg-dark);
+      color: var(--text-pri);
+      font-family: var(--font);
+      font-size: 14px;
+      min-height: 100vh;
+    }
+
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Layout ── */
+    .page-wrap {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px 20px 60px;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 32px;
+    }
+    .header-left h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text-pri);
+      letter-spacing: -0.3px;
+    }
+    .header-left .subtitle {
+      color: var(--text-sec);
+      font-size: 13px;
+      margin-top: 4px;
+    }
+    .header-left .updated {
+      color: var(--text-mut);
+      font-size: 12px;
+      margin-top: 6px;
+    }
+    .gear-btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-sec);
+      border-radius: 8px;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 16px;
+      flex-shrink: 0;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .gear-btn:hover { border-color: var(--green); color: var(--green); }
+
+    /* ── Section label ── */
+    .section-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--green);
+      margin-bottom: 12px;
+    }
+
+    /* ── Card ── */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+    }
+
+    /* ── KPI Grid ── */
+    .kpi-section { margin-bottom: 32px; }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 14px;
+    }
+    @media (max-width: 900px) {
+      .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 600px) {
+      .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    .kpi-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 16px 16px;
+    }
+    .kpi-label {
+      font-size: 11px;
+      color: var(--text-sec);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 8px;
+    }
+    .kpi-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--text-pri);
+      line-height: 1;
+    }
+    .kpi-value.green { color: var(--green); }
+    .kpi-value.amber { color: var(--amber); }
+
+    /* ── Pipeline Control ── */
+    .pipeline-section { margin-bottom: 32px; }
+    .pipeline-card { padding: 24px; }
+
+    .pipeline-no-token {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--text-sec);
+    }
+    .pipeline-no-token-link {
+      color: var(--blue);
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .pipeline-no-token-link:hover { text-decoration: underline; }
+
+    .pipeline-idle { display: none; }
+    .pipeline-idle .last-run-info {
+      font-size: 12px;
+      color: var(--text-sec);
+      margin-bottom: 16px;
+    }
+    .pipeline-form {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: flex-end;
+    }
+    .pipeline-form label {
+      font-size: 11px;
+      color: var(--text-sec);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      display: block;
+      margin-bottom: 5px;
+    }
+    .pipeline-form input[type="number"],
+    .pipeline-form select {
+      background: var(--bg-dark);
+      border: 1px solid var(--border);
+      color: var(--text-pri);
+      border-radius: 6px;
+      padding: 7px 10px;
+      font-family: var(--font);
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .pipeline-form input[type="number"]:focus,
+    .pipeline-form select:focus { border-color: var(--green); }
+    .pipeline-form input[type="number"] { width: 120px; }
+
+    .btn {
+      border: none;
+      border-radius: 7px;
+      padding: 8px 18px;
+      font-family: var(--font);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-green { background: var(--green); color: #0f0f1a; }
+    .btn-red { background: var(--red); color: #0f0f1a; }
+    .btn-gray { background: #2a2a4a; color: var(--text-sec); }
+    .btn-blue { background: var(--blue); color: #0f0f1a; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* In-progress pipeline */
+    .pipeline-inprogress { display: none; }
+    .pipeline-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .status-dot.amber {
+      background: var(--amber);
+      animation: pulse-amber 1.5s ease-in-out infinite;
+    }
+    .status-dot.green { background: var(--green); }
+    .status-dot.red { background: var(--red); }
+    @keyframes pulse-amber {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(232,185,49,0.6); }
+      50% { box-shadow: 0 0 0 6px rgba(232,185,49,0); }
+    }
+    .pipeline-elapsed {
+      font-size: 12px;
+      color: var(--text-sec);
+      margin-left: auto;
+    }
+
+    /* Steps visualization */
+    .steps-row {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+    .step-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+      flex-shrink: 0;
+    }
+    .step-circle {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      color: var(--text-mut);
+      background: var(--bg-dark);
+      transition: all 0.3s;
+    }
+    .step-circle.active {
+      border-color: var(--amber);
+      color: var(--amber);
+      background: rgba(232,185,49,0.1);
+    }
+    .step-circle.done {
+      border-color: var(--green);
+      color: var(--green);
+      background: rgba(78,204,163,0.1);
+    }
+    .step-circle.failed {
+      border-color: var(--red);
+      color: var(--red);
+      background: rgba(247,118,142,0.1);
+    }
+    .step-label {
+      font-size: 10px;
+      color: var(--text-sec);
+      text-align: center;
+      white-space: nowrap;
+    }
+    .step-arrow {
+      color: var(--border);
+      font-size: 16px;
+      padding: 0 4px;
+      margin-bottom: 18px;
+      flex-shrink: 0;
+    }
+    .pipeline-logs-link {
+      display: block;
+      margin-top: 14px;
+      font-size: 12px;
+      color: var(--text-sec);
+    }
+
+    /* Completed pipeline */
+    .pipeline-completed { display: none; }
+    .pipeline-completed .summary-text {
+      font-size: 13px;
+      color: var(--text-sec);
+      margin-bottom: 14px;
+    }
+    .pipeline-completed .summary-text strong { color: var(--text-pri); }
+
+    /* ── Chart Section ── */
+    .chart-section { margin-bottom: 32px; }
+    .chart-card { padding: 24px; }
+    .chart-wrap {
+      position: relative;
+      height: 220px;
+    }
+
+    /* ── Token Usage Section ── */
+    .tokens-section { margin-bottom: 32px; }
+    .tokens-card { padding: 24px; }
+    .token-row {
+      display: grid;
+      grid-template-columns: 120px 1fr 80px;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .token-row:last-child { margin-bottom: 0; }
+    .token-label {
+      font-size: 12px;
+      color: var(--text-sec);
+      white-space: nowrap;
+    }
+    .token-bar-wrap {
+      background: var(--bg-dark);
+      border-radius: 4px;
+      height: 8px;
+      overflow: hidden;
+    }
+    .token-bar {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.5s ease;
+    }
+    .token-bar.blue   { background: var(--blue); }
+    .token-bar.purple { background: var(--purple); }
+    .token-bar.amber  { background: var(--amber); }
+    .token-bar.green  { background: var(--green); }
+    .token-count {
+      font-size: 11px;
+      color: var(--text-sec);
+      text-align: right;
+    }
+    .tokens-no-data {
+      color: var(--text-mut);
+      font-size: 13px;
+    }
+
+    /* ── Run History ── */
+    .history-section { margin-bottom: 32px; }
+    .history-card { padding: 0; overflow: hidden; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    thead th {
+      background: var(--bg-dark);
+      color: var(--text-sec);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background 0.15s;
+      cursor: default;
+    }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #1f1f35; }
+    tbody td {
+      padding: 11px 14px;
+      font-size: 13px;
+      color: var(--text-pri);
+      vertical-align: middle;
+    }
+    .issue-cell {
+      max-width: 260px;
+    }
+    .issue-title {
+      font-size: 12px;
+      color: var(--text-sec);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 9px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+    .badge-success { background: rgba(78,204,163,0.15); color: var(--green); }
+    .badge-failed  { background: rgba(247,118,142,0.15); color: var(--red); }
+    .badge-budget  { background: rgba(232,185,49,0.15); color: var(--amber); }
+    .badge-pr {
+      display: inline-block;
+      padding: 2px 9px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      background: rgba(122,162,247,0.15);
+      color: var(--blue);
+    }
+    .no-data-row td {
+      color: var(--text-mut);
+      font-size: 13px;
+      text-align: center;
+      padding: 28px 14px;
+    }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.65);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px;
+      width: 420px;
+      max-width: 94vw;
+    }
+    .modal h2 {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-pri);
+      margin-bottom: 10px;
+    }
+    .modal p {
+      font-size: 13px;
+      color: var(--text-sec);
+      line-height: 1.55;
+      margin-bottom: 18px;
+    }
+    .modal input[type="password"] {
+      width: 100%;
+      background: var(--bg-dark);
+      border: 1px solid var(--border);
+      color: var(--text-pri);
+      border-radius: 7px;
+      padding: 9px 12px;
+      font-family: var(--font);
+      font-size: 13px;
+      outline: none;
+      margin-bottom: 16px;
+      transition: border-color 0.2s;
+    }
+    .modal input[type="password"]:focus { border-color: var(--green); }
+    .modal-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+    }
+
+    /* ── Scrollbar styling ── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg-dark); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+<div class="page-wrap">
+
+  <!-- ── Header ── -->
+  <header>
+    <div class="header-left">
+      <h1>conduit-agent-experiment</h1>
+      <div class="subtitle">Autonomous pipeline dashboard</div>
+      <div class="updated" id="last-updated">Loading…</div>
+    </div>
+    <button class="gear-btn" id="gear-btn" title="Configure GitHub token">⚙</button>
+  </header>
+
+  <!-- ── 1. Overview KPIs ── -->
+  <section class="kpi-section">
+    <div class="section-label">Overview</div>
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">Total Runs</div>
+        <div class="kpi-value" id="kpi-runs">—</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Total Cost</div>
+        <div class="kpi-value" id="kpi-cost">—</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Success Rate</div>
+        <div class="kpi-value green" id="kpi-rate">—</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">PRs Created</div>
+        <div class="kpi-value" id="kpi-prs">—</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Avg Iterations</div>
+        <div class="kpi-value amber" id="kpi-iters">—</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 2. Pipeline Control ── -->
+  <section class="pipeline-section">
+    <div class="section-label">Pipeline Control</div>
+    <div class="card pipeline-card">
+
+      <!-- State A: no token -->
+      <div class="pipeline-no-token" id="state-no-token">
+        <span style="color:var(--text-mut);font-size:18px;">⚙</span>
+        <span>Configure GitHub token to enable pipeline control and live status —
+          <span class="pipeline-no-token-link" id="configure-link">click to set up</span>
+        </span>
+      </div>
+
+      <!-- State B: idle with token -->
+      <div class="pipeline-idle" id="state-idle">
+        <div class="last-run-info" id="last-run-info">Loading last run…</div>
+        <div class="pipeline-form">
+          <div>
+            <label for="issue-input">Issue #</label>
+            <input type="number" id="issue-input" placeholder="e.g. 576" min="1">
+          </div>
+          <div>
+            <label for="mode-select">Mode</label>
+            <select id="mode-select">
+              <option value="auto">auto</option>
+              <option value="review">review</option>
+              <option value="implement">implement</option>
+            </select>
+          </div>
+          <div style="padding-bottom:0">
+            <button class="btn btn-green" id="run-btn">▶ Run Pipeline</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- State C: in-progress -->
+      <div class="pipeline-inprogress" id="state-inprogress">
+        <div class="pipeline-header">
+          <div class="status-dot amber"></div>
+          <span style="font-size:13px;color:var(--amber);font-weight:600;">Run in progress</span>
+          <span class="pipeline-elapsed" id="elapsed-time"></span>
+        </div>
+        <div class="steps-row" id="steps-row">
+          <!-- Rendered by JS -->
+        </div>
+        <a class="pipeline-logs-link" id="logs-link" href="#" target="_blank">View logs ↗</a>
+      </div>
+
+      <!-- State D: completed -->
+      <div class="pipeline-completed" id="state-completed">
+        <div class="pipeline-header">
+          <div class="status-dot green"></div>
+          <span style="font-size:13px;color:var(--green);font-weight:600;">Completed</span>
+        </div>
+        <div class="summary-text" id="completed-summary"></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+          <a id="view-pr-btn" href="#" target="_blank" class="btn btn-blue" style="display:none;">View PR ↗</a>
+          <span style="font-size:12px;color:var(--text-mut)" id="auto-dismiss-msg"></span>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── 3. Cost per Run Chart ── -->
+  <section class="chart-section">
+    <div class="section-label">Cost per Run</div>
+    <div class="card chart-card">
+      <div class="chart-wrap">
+        <canvas id="cost-chart"></canvas>
+      </div>
+      <div id="no-chart-data" style="display:none;text-align:center;color:var(--text-mut);padding:40px 0;font-size:13px;">
+        No run data available.
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 4. Token Usage ── -->
+  <section class="tokens-section">
+    <div class="section-label">Token Usage — Latest Run</div>
+    <div class="card tokens-card">
+      <div id="token-bars">
+        <div class="tokens-no-data">No run data available.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 5. Run History ── -->
+  <section class="history-section">
+    <div class="section-label">Run History</div>
+    <div class="card history-card">
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Issue</th>
+            <th>Status</th>
+            <th>Iterations</th>
+            <th>Cost</th>
+            <th>Model</th>
+            <th>PR</th>
+          </tr>
+        </thead>
+        <tbody id="history-tbody">
+          <tr class="no-data-row"><td colspan="7">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</div><!-- /page-wrap -->
+
+<!-- ── Token Modal ── -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <h2>GitHub Personal Access Token</h2>
+    <p>Enables: trigger pipeline runs, view live run status. Token is stored in your browser only — never sent to any server except api.github.com.</p>
+    <input type="password" id="token-input" placeholder="ghp_…" autocomplete="off" spellcheck="false">
+    <div class="modal-actions">
+      <button class="btn btn-red" id="clear-token-btn" style="display:none;">Clear token</button>
+      <button class="btn btn-gray" id="skip-btn">Skip — read-only</button>
+      <button class="btn btn-green" id="save-token-btn">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Constants ──
+const OWNER         = 'William-Hill';
+const REPO          = 'conduit-agent-experiment';
+const WORKFLOW_FILE = 'implement.yml';
+const POLL_INTERVAL = 15000;
+
+const PIPELINE_STEPS = ['Clone', 'Archivist', 'Planner', 'Reviewer', 'Implementer', 'Push', 'Draft PR'];
+
+// ── State ──
+let ghToken      = localStorage.getItem('gh_token') || '';
+let pollTimer    = null;
+let elapsedTimer = null;
+let runStartTime = null;
+let activeRunUrl = '';
+let activeRunId  = null;
+
+// ── Helpers ──
+function fmt(n) { return n == null ? '—' : Number(n).toLocaleString(); }
+function fmtUSD(n) { return n == null ? '—' : '$' + Number(n).toFixed(3); }
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+}
+function fmtMonDD(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
+}
+function fmtModel(m) {
+  if (!m) return '—';
+  const l = m.toLowerCase();
+  if (l.includes('haiku'))  return 'Haiku 4.5';
+  if (l.includes('sonnet')) return 'Sonnet';
+  return m;
+}
+function fmtSeconds(s) {
+  if (!s) return '';
+  const m = Math.floor(s / 60), sec = s % 60;
+  return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+}
+function fmtElapsed(startIso) {
+  const diff = Math.floor((Date.now() - new Date(startIso).getTime()) / 1000);
+  return fmtSeconds(diff);
+}
+
+async function ghFetch(path, opts = {}) {
+  const headers = { 'Accept': 'application/vnd.github+json', ...(opts.headers || {}) };
+  if (ghToken) headers['Authorization'] = `Bearer ${ghToken}`;
+  const res = await fetch(`https://api.github.com/${path}`, { ...opts, headers });
+  if (!res.ok) throw new Error(`GitHub API ${res.status}: ${res.statusText}`);
+  return res.json();
+}
+
+// ── Modal ──
+const modalOverlay = document.getElementById('modal-overlay');
+const tokenInput   = document.getElementById('token-input');
+const clearBtn     = document.getElementById('clear-token-btn');
+const skipBtn      = document.getElementById('skip-btn');
+const saveBtn      = document.getElementById('save-token-btn');
+
+function openModal() {
+  tokenInput.value = ghToken || '';
+  clearBtn.style.display = ghToken ? 'inline-flex' : 'none';
+  modalOverlay.classList.add('open');
+  tokenInput.focus();
+}
+function closeModal() { modalOverlay.classList.remove('open'); }
+
+document.getElementById('gear-btn').addEventListener('click', openModal);
+document.getElementById('configure-link').addEventListener('click', openModal);
+modalOverlay.addEventListener('click', e => { if (e.target === modalOverlay) closeModal(); });
+skipBtn.addEventListener('click', closeModal);
+
+clearBtn.addEventListener('click', () => {
+  ghToken = '';
+  localStorage.removeItem('gh_token');
+  closeModal();
+  updatePipelineUI();
+});
+
+saveBtn.addEventListener('click', () => {
+  const val = tokenInput.value.trim();
+  if (!val) return;
+  ghToken = val;
+  localStorage.setItem('gh_token', val);
+  closeModal();
+  updatePipelineUI();
+  startPolling();
+});
+
+tokenInput.addEventListener('keydown', e => { if (e.key === 'Enter') saveBtn.click(); });
+
+// ── Pipeline UI states ──
+function showState(id) {
+  ['state-no-token','state-idle','state-inprogress','state-completed'].forEach(s => {
+    document.getElementById(s).style.display = s === id ? '' : 'none';
+  });
+}
+
+function updatePipelineUI(lastRun) {
+  if (!ghToken) {
+    showState('state-no-token');
+    return;
+  }
+  // Will be updated by poll; show idle as default
+  showState('state-idle');
+  if (lastRun) {
+    document.getElementById('last-run-info').textContent =
+      `Last run: Issue #${lastRun.issue_number} — ${lastRun.status} — ${fmtDate(lastRun.timestamp)}`;
+  }
+}
+
+function renderSteps(mode) {
+  // mode: 'active' | 'done' | 'failed'
+  const row = document.getElementById('steps-row');
+  row.innerHTML = '';
+  PIPELINE_STEPS.forEach((name, i) => {
+    const isLast = i === PIPELINE_STEPS.length - 1;
+    let cls = mode === 'active' ? 'active' :
+              mode === 'failed' && isLast ? 'failed' : 'done';
+    const icon = cls === 'active' ? '●' : cls === 'failed' ? '✕' : '✓';
+
+    const item = document.createElement('div');
+    item.className = 'step-item';
+    item.innerHTML = `
+      <div class="step-circle ${cls}">${icon}</div>
+      <div class="step-label">${name}</div>
+    `;
+    row.appendChild(item);
+
+    if (!isLast) {
+      const arr = document.createElement('div');
+      arr.className = 'step-arrow';
+      arr.textContent = '→';
+      row.appendChild(arr);
+    }
+  });
+}
+
+async function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  await pollWorkflow();
+  pollTimer = setInterval(pollWorkflow, POLL_INTERVAL);
+}
+
+async function pollWorkflow() {
+  if (!ghToken) return;
+  try {
+    const data = await ghFetch(
+      `repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW_FILE}/runs?status=in_progress&per_page=1`
+    );
+    const run = data.workflow_runs && data.workflow_runs[0];
+    if (run) {
+      showInProgress(run);
+    } else {
+      // Check if we were just in-progress (completed)
+      if (activeRunId) {
+        await checkCompleted();
+      } else {
+        showState('state-idle');
+      }
+    }
+  } catch (e) {
+    console.warn('Poll error:', e.message);
+  }
+}
+
+function showInProgress(run) {
+  activeRunId  = run.id;
+  activeRunUrl = run.html_url;
+  runStartTime = run.created_at;
+
+  showState('state-inprogress');
+  renderSteps('active');
+  document.getElementById('logs-link').href = activeRunUrl;
+
+  if (elapsedTimer) clearInterval(elapsedTimer);
+  const updateElapsed = () => {
+    document.getElementById('elapsed-time').textContent = fmtElapsed(runStartTime);
+  };
+  updateElapsed();
+  elapsedTimer = setInterval(updateElapsed, 1000);
+}
+
+async function checkCompleted() {
+  try {
+    const data = await ghFetch(
+      `repos/${OWNER}/${REPO}/actions/runs/${activeRunId}`
+    );
+    const conclusion = data.conclusion;
+    const dur = data.updated_at
+      ? Math.floor((new Date(data.updated_at) - new Date(data.created_at)) / 1000)
+      : null;
+
+    if (elapsedTimer) clearInterval(elapsedTimer);
+    renderSteps(conclusion === 'success' ? 'done' : 'failed');
+
+    showState('state-completed');
+    const summaryEl = document.getElementById('completed-summary');
+    summaryEl.innerHTML = `Status: <strong>${conclusion || 'unknown'}</strong>${dur ? ` &mdash; Duration: <strong>${fmtSeconds(dur)}</strong>` : ''}`;
+
+    const prBtn = document.getElementById('view-pr-btn');
+    prBtn.style.display = 'inline-flex';
+    prBtn.href = data.html_url || '#';
+
+    activeRunId = null;
+    // Auto-dismiss after 30s
+    const dismiss = document.getElementById('auto-dismiss-msg');
+    let count = 30;
+    dismiss.textContent = `Auto-dismiss in ${count}s`;
+    const t = setInterval(() => {
+      count--;
+      dismiss.textContent = `Auto-dismiss in ${count}s`;
+      if (count <= 0) {
+        clearInterval(t);
+        showState('state-idle');
+      }
+    }, 1000);
+  } catch (e) {
+    console.warn('Completed check error:', e.message);
+    activeRunId = null;
+    showState('state-idle');
+  }
+}
+
+// ── Trigger pipeline ──
+document.getElementById('run-btn').addEventListener('click', async () => {
+  const issue = document.getElementById('issue-input').value.trim();
+  const mode  = document.getElementById('mode-select').value;
+  if (!issue) { alert('Please enter an issue number.'); return; }
+  if (!ghToken) { openModal(); return; }
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true;
+  btn.textContent = 'Triggering…';
+  try {
+    await ghFetch(
+      `repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW_FILE}/dispatches`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ref: 'main', inputs: { hitl_mode: mode, issue_number: issue } })
+      }
+    );
+    btn.textContent = 'Triggered!';
+    setTimeout(() => { btn.disabled = false; btn.innerHTML = '▶ Run Pipeline'; }, 2500);
+    // Start polling immediately
+    setTimeout(startPolling, 3000);
+  } catch (e) {
+    alert('Trigger failed: ' + e.message);
+    btn.disabled = false;
+    btn.innerHTML = '▶ Run Pipeline';
+  }
+});
+
+// ── Load data.json ──
+let chartInstance = null;
+
+async function loadData() {
+  let data;
+  try {
+    const res = await fetch('data.json');
+    data = await res.json();
+  } catch (e) {
+    console.error('Failed to load data.json:', e);
+    document.getElementById('last-updated').textContent = 'Could not load data.json';
+    document.getElementById('history-tbody').innerHTML =
+      '<tr class="no-data-row"><td colspan="7">Failed to load data.</td></tr>';
+    return;
+  }
+
+  const runs = (data.runs || []).slice().reverse(); // most recent first for table
+  const runsAsc = data.runs || [];                  // ascending for chart
+
+  // Updated timestamp
+  if (data.updated_at) {
+    const d = new Date(data.updated_at);
+    document.getElementById('last-updated').textContent =
+      'Last updated: ' + d.toLocaleString('en-US', { month: 'short', day: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
+  } else {
+    document.getElementById('last-updated').textContent = '';
+  }
+
+  // ── KPIs ──
+  const total    = runsAsc.length;
+  const totalCost = runsAsc.reduce((s, r) => s + (r.estimated_cost_usd || 0), 0);
+  const success  = runsAsc.filter(r => r.status === 'success').length;
+  const rate     = total ? Math.round(success / total * 100) : 0;
+  const prs      = runsAsc.filter(r => r.pr_url).length;
+  const avgIter  = total ? (runsAsc.reduce((s,r) => s + (r.iterations||0), 0) / total).toFixed(1) : '—';
+
+  document.getElementById('kpi-runs').textContent  = fmt(total);
+  document.getElementById('kpi-cost').textContent  = fmtUSD(totalCost);
+  document.getElementById('kpi-rate').textContent  = total ? rate + '%' : '—';
+  document.getElementById('kpi-prs').textContent   = fmt(prs);
+  document.getElementById('kpi-iters').textContent = avgIter;
+
+  // ── Pipeline idle last-run info ──
+  const lastRun = data.runs && data.runs[data.runs.length - 1];
+  updatePipelineUI(lastRun);
+
+  // ── Chart ──
+  if (runsAsc.length === 0) {
+    document.getElementById('cost-chart').style.display = 'none';
+    document.getElementById('no-chart-data').style.display = 'block';
+  } else {
+    const labels = runsAsc.map(r => fmtMonDD(r.timestamp));
+    const values = runsAsc.map(r => r.estimated_cost_usd || 0);
+    const colors = runsAsc.map(r =>
+      r.budget_exceeded ? '#e8b931' :
+      r.status === 'success' ? '#4ecca3' : '#f7768e'
+    );
+
+    const ctx = document.getElementById('cost-chart').getContext('2d');
+    if (chartInstance) chartInstance.destroy();
+    chartInstance = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          data: values,
+          backgroundColor: colors,
+          borderRadius: 4,
+          barPercentage: 0.6,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 500 },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1a1a2e',
+            borderColor: '#2a2a4a',
+            borderWidth: 1,
+            titleColor: '#e0e0e0',
+            bodyColor: '#888888',
+            padding: 10,
+            callbacks: {
+              title: (items) => {
+                const r = runsAsc[items[0].dataIndex];
+                return r ? `#${r.issue_number}` : '';
+              },
+              label: (item) => {
+                const r = runsAsc[item.dataIndex];
+                if (!r) return '';
+                return [
+                  r.issue_title ? r.issue_title.slice(0, 40) + (r.issue_title.length > 40 ? '…' : '') : '',
+                  `Cost: $${(r.estimated_cost_usd||0).toFixed(4)}`,
+                  `Iterations: ${r.iterations || '—'}`,
+                ].filter(Boolean);
+              }
+            }
+          },
+          annotation: {
+            annotations: {
+              baseline: {
+                type: 'line',
+                yMin: 0.06,
+                yMax: 0.06,
+                borderColor: '#555555',
+                borderWidth: 1,
+                borderDash: [5, 4],
+                label: {
+                  content: '$0.06 baseline',
+                  display: true,
+                  position: 'end',
+                  color: '#555555',
+                  font: { size: 10, family: "'SF Mono', 'Fira Code', monospace" },
+                  padding: { x: 6, y: 3 },
+                  backgroundColor: 'transparent',
+                }
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { color: '#1f1f35' },
+            ticks: { color: '#888888', font: { size: 11 } }
+          },
+          y: {
+            grid: { color: '#1f1f35' },
+            ticks: {
+              color: '#888888',
+              font: { size: 11 },
+              callback: v => '$' + v.toFixed(2)
+            },
+            beginAtZero: true
+          }
+        }
+      }
+    });
+  }
+
+  // ── Token Usage (latest run) ──
+  const latest = data.runs && data.runs[data.runs.length - 1];
+  const tokenBarsEl = document.getElementById('token-bars');
+  if (latest && (latest.input_tokens || latest.output_tokens)) {
+    const maxTokens = Math.max(
+      latest.input_tokens        || 0,
+      latest.output_tokens       || 0,
+      latest.cache_read_tokens   || 0,
+      latest.cache_creation_tokens || 0
+    );
+    const rows = [
+      { label: 'Input',           count: latest.input_tokens,          cls: 'blue'   },
+      { label: 'Output',          count: latest.output_tokens,         cls: 'purple' },
+      { label: 'Cache Read',      count: latest.cache_read_tokens,     cls: 'green'  },
+      { label: 'Cache Creation',  count: latest.cache_creation_tokens, cls: 'amber'  },
+    ];
+    tokenBarsEl.innerHTML = rows.map(row => {
+      const pct = maxTokens ? Math.round((row.count || 0) / maxTokens * 100) : 0;
+      return `
+        <div class="token-row">
+          <div class="token-label">${row.label}</div>
+          <div class="token-bar-wrap">
+            <div class="token-bar ${row.cls}" style="width:${pct}%"></div>
+          </div>
+          <div class="token-count">${fmt(row.count || 0)}</div>
+        </div>`;
+    }).join('');
+  } else {
+    tokenBarsEl.innerHTML = '<div class="tokens-no-data">No run data available.</div>';
+  }
+
+  // ── Run History ──
+  const tbody = document.getElementById('history-tbody');
+  if (runs.length === 0) {
+    tbody.innerHTML = '<tr class="no-data-row"><td colspan="7">No runs yet.</td></tr>';
+  } else {
+    tbody.innerHTML = runs.map(r => {
+      let badgeCls, badgeLabel;
+      if (r.budget_exceeded) { badgeCls = 'badge-budget'; badgeLabel = 'budget'; }
+      else if (r.status === 'success') { badgeCls = 'badge-success'; badgeLabel = 'success'; }
+      else { badgeCls = 'badge-failed'; badgeLabel = r.status || 'failed'; }
+
+      const prCell = r.pr_url
+        ? `<a href="${r.pr_url}" target="_blank" class="badge badge-pr">PR ↗</a>`
+        : `<span style="color:var(--text-mut)">—</span>`;
+
+      return `<tr>
+        <td style="white-space:nowrap;color:var(--text-sec)">${fmtDate(r.timestamp)}</td>
+        <td class="issue-cell">
+          <div>#${r.issue_number}</div>
+          <div class="issue-title" title="${r.issue_title || ''}">${r.issue_title || '—'}</div>
+        </td>
+        <td><span class="badge ${badgeCls}">${badgeLabel}</span></td>
+        <td>${fmt(r.iterations)}</td>
+        <td style="white-space:nowrap">${fmtUSD(r.estimated_cost_usd)}</td>
+        <td style="white-space:nowrap">${fmtModel(r.model)}</td>
+        <td>${prCell}</td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+// ── Init ──
+loadData();
+if (ghToken) startPolling();
+</script>
+</body>
+</html>
