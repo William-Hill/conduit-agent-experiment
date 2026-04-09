@@ -1,0 +1,24 @@
+{
+  "runs": [
+    {
+      "run_id": "24167191811",
+      "issue_number": 576,
+      "issue_title": "Error codes needs to be documented in Swagger",
+      "model": "claude-haiku-4-5-20251001",
+      "iterations": 15,
+      "input_tokens": 205097,
+      "output_tokens": 15184,
+      "cache_creation_tokens": 8582,
+      "cache_read_tokens": 128730,
+      "estimated_cost_usd": 0.281017,
+      "budget_exceeded": false,
+      "pr_url": "https://github.com/ConduitIO/conduit/pull/2455",
+      "summary": "Implemented error code documentation in Swagger for Conduit API endpoints",
+      "plan_chars": 24215,
+      "timestamp": "2026-04-09T01:20:01Z",
+      "status": "success",
+      "duration_seconds": 464
+    }
+  ],
+  "updated_at": "2026-04-09T01:30:00Z"
+}
