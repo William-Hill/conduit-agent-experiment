@@ -41,7 +41,7 @@ const (
 	UpsertCreated       UpsertAction = "created"        // fresh branch + new PR
 	UpsertForcePushed   UpsertAction = "force_pushed"   // branch existed but no PR, force-pushed + new PR
 	UpsertUpdated       UpsertAction = "updated"        // force-pushed + commented on existing open PR
-	UpsertSuffixed      UpsertAction = "suffixed"       // prior PR closed, new branch with -N suffix + new PR
+	UpsertSuffixed      UpsertAction = "suffixed"       // prior PR closed, new branch with --N suffix + new PR
 	UpsertSkippedMerged UpsertAction = "skipped_merged" // prior PR merged, no push, no PR
 )
 
@@ -1080,6 +1080,8 @@ git commit -m "feat(github): UpsertBranchAndPR skip path for merged PRs (#30)"
 **Files:**
 - Modify: `internal/github/adapter.go`
 - Test: `internal/github/adapter_test.go`
+
+> **Historical note:** The code/tests below use a single-dash suffix (`agent/fix-1-2`). During review the final implementation was revised to use a **double-dash** marker (`agent/fix-1--2`) because the single-dash form produced a false-positive for low-numbered issues (e.g. `agent/fix-7` would be parsed as having suffix 7). The revision commit is `0afe14f`. Read this task as written, then treat every `-<N>` suffix literal as `--<N>` when matching against the final `internal/github/adapter.go`. The plan is preserved as a historical record of the original TDD sequence.
 
 - [ ] **Step 1: Write the failing test**
 

@@ -58,18 +58,22 @@ From those two facts it picks one of five actions:
 
 | State                                     | Action                | Behavior                                                                                                                             |
 |-------------------------------------------|-----------------------|--------------------------------------------------------------------------------------------------------------------------------------|
-| Branch does not exist                     | **Create**            | `git push -u fork <branch>` → `gh pr create --draft`. Return the new PR URL. (Current behavior.)                                     |
-| Branch exists, no PR ever                 | **Force-push + new PR** | `git fetch fork <branch>` → `git push --force-with-lease=<branch>:<fetched-sha> fork HEAD:<branch>` → `gh pr create --draft`.        |
-| Branch exists, most-recent PR is **OPEN** | **Update**            | Force-push as above → `gh issue comment <prNum> --body "Updated by automated run at <RFC3339 timestamp>"`. Return the existing PR URL. |
-| Branch exists, most-recent PR is **CLOSED** (unmerged) | **Suffixed**          | Recurse: run the same upsert decision against `<branch>-2`, then `-3`, up to `-10`. The first candidate whose decision is *not* "CLOSED" (i.e., Create, Force-push+new PR, Update, or Skip-merged) terminates the search. Fail loudly if all 10 candidates also have closed PRs. |
-| Branch exists, most-recent PR is **MERGED** | **Skip**              | Log "upstream branch already merged, skipping push" and return `UpsertSkippedMerged`. No push, no PR creation. Caller treats as no-op. |
+| Branch does not exist                     | **Create** (`UpsertCreated`)               | `git push -u fork <branch>` → `gh pr create --draft`. Return the new PR URL.                                                                                   |
+| Branch exists, no PR ever                 | **Force-push + new PR** (`UpsertForcePushed`) | `git fetch fork <branch>` → `git push --force-with-lease=<branch>:<fetched-sha> fork HEAD:<branch>` → `gh pr create --draft`.                                  |
+| Branch exists, most-recent PR is **OPEN** | **Update** (`UpsertUpdated`)               | Force-push as above → `gh issue comment <prNum> --body "Updated by automated run at <RFC3339 timestamp>"`. Return the existing PR URL.                          |
+| Branch exists, most-recent PR is **CLOSED** (unmerged) | **Suffixed** (`UpsertSuffixed`)         | Iterate suffix candidates `<branch>--2`, `<branch>--3`, …, `<branch>--10` (double-dash marker so issue-number branches like `agent/fix-1268` are never misread as suffixed). The first candidate whose decision is *not* "CLOSED" terminates the loop. Fail loudly if all 9 candidates also have closed PRs. |
+| Branch exists, most-recent PR is **MERGED** | **Skip** (`UpsertSkippedMerged`)        | Log "upstream branch already merged, skipping push" and return `UpsertSkippedMerged`. No push, no PR creation. Caller treats as no-op.                          |
 
 Notes:
 
 - "Most recent PR" uses `createdAt` desc so a reopened-then-reclosed PR is
   handled the same as a closed PR.
-- The suffix search recursively re-runs the full state check on each candidate
-  so a half-migrated `-2` with its own open PR is handled correctly.
+- The suffix retry is iterative (a `for` loop), not recursive. Each candidate
+  runs the full `upsertOnce` decision; closed candidates fall through to the
+  next `--N`.
+- The double-dash suffix marker (`--N`) is structurally unambiguous — normal
+  branch names never contain `--`, so issue numbers embedded in branch names
+  (e.g. `agent/fix-7`, `agent/fix-1268`) are never mistaken for a suffix.
 - The suffix cap of 10 is arbitrary but generous — in practice we expect 2-3
   attempts max before a human intervenes.
 
@@ -78,13 +82,15 @@ Notes:
 New types and method in `internal/github/adapter.go`:
 
 ```go
-// UpsertAction describes what UpsertBranchAndPR did.
+// UpsertAction describes what UpsertBranchAndPR did. Five variants, one
+// per decision branch:
 type UpsertAction string
 
 const (
     UpsertCreated       UpsertAction = "created"        // fresh branch + new PR
-    UpsertUpdated       UpsertAction = "updated"        // force-pushed, commented on existing PR
-    UpsertSuffixed      UpsertAction = "suffixed"       // prior PR closed, new branch -N + new PR
+    UpsertForcePushed   UpsertAction = "force_pushed"   // orphan branch (exists but no PR), force-pushed + new PR
+    UpsertUpdated       UpsertAction = "updated"        // force-pushed, commented on existing open PR
+    UpsertSuffixed      UpsertAction = "suffixed"       // prior PR closed, new branch --N + new PR
     UpsertSkippedMerged UpsertAction = "skipped_merged" // prior PR merged, no push
 )
 
@@ -112,11 +118,14 @@ func (a *Adapter) UpsertBranchAndPR(
 
 Supporting private helpers:
 
-- `ensureForkRemote(ctx, worktreeDir) error` — idempotent `git remote add fork …`; factored out of the current `CreateBranchAndPush` so both the first-push and force-push paths share it.
-- `commitWorktree(ctx, worktreeDir, branch, commitMsg) error` — does `git checkout -B`, `git add -A`, `git commit -m`. Shared between fresh-create and force-push paths.
-- `branchExistsOnFork(ctx, branch) (bool, error)` — `gh api repos/<fork>/<repo>/branches/<branch>`. Treats HTTP 404 as `(false, nil)`, any other error as real.
-- `prSummary` type and `mostRecentPRForBranch(ctx, branch) (*prSummary, error)` — wraps `gh pr list --head <fork-owner>:<branch> --state all --json number,state,url,createdAt --limit 20`. Returns `nil, nil` when the list is empty. Sorts client-side.
-- `forcePushBranch(ctx, worktreeDir, branch) error` — fetches then force-pushes with lease on the freshly fetched sha.
+- `ensureForkRemote(ctx, worktreeDir) string` — idempotent `git remote add fork …`. Returns the name of the push remote (`"fork"` if `ForkOwner` differs from upstream, otherwise `"origin"`). Shared between the first-push and force-push paths.
+- `commitWorktree(ctx, worktreeDir, branch, commitMsg) error` — does `git checkout -B`, `git add -A`, `git commit -m`. Shared between the fresh-create, force-push, and update paths.
+- `forkRepo() string` — returns `"<ForkOwner>/<Repo>"`, falling back to `"<Owner>/<Repo>"` when `ForkOwner` is empty (direct-push / same-repo mode).
+- `branchExistsOnFork(ctx, branch) (bool, error)` — `gh api repos/<forkRepo>/branches/<branch> --silent`. Treats HTTP 404 as `(false, nil)`, any other error as real.
+- `prSummary` type and `mostRecentPRForBranch(ctx, branch) (*prSummary, error)` — wraps `gh pr list --head <fork-owner>:<branch> --state all --json number,state,url,createdAt --limit 20`. Returns `nil, nil` when the list is empty. Sorts client-side by `createdAt` descending.
+- `forcePushBranch(ctx, worktreeDir, branch) error` — fetches then force-pushes with `--force-with-lease=<branch>:<fetched-sha>` pinned to the just-fetched sha.
+- `upsertOnce(ctx, worktreeDir, branch, commitMsg, prInput) (UpsertResult, error)` — attempts to upsert a single branch without suffix retry. Returns an internal sentinel error (`errClosedPRRetry`) when the branch has a closed PR; the caller (`UpsertBranchAndPR`) then iterates through the `--N` suffix candidates.
+- `parseSuffix(branch) (base string, n int)` — splits a branch like `agent/fix-1--3` into `("agent/fix-1", 3)`. Non-suffixed branches (including issue-number-ending names like `agent/fix-1268`) return `(branch, 0)`.
 
 ### Existing methods
 
@@ -160,9 +169,9 @@ shell `case` pattern as `TestListIssuesWithLabels`).
    existing PR URL, `Action == UpsertUpdated`.
 
 3. **`TestUpsertBranchAndPR_SuffixedWhenClosed`** — first lookup: branch
-   exists, PR state `CLOSED`. Second lookup on `agent/fix-1-2`: branch does
-   not exist. Expects push to `agent/fix-1-2` and PR creation against it.
-   `Action == UpsertSuffixed`, `Branch == "agent/fix-1-2"`.
+   exists, PR state `CLOSED`. Second lookup on `agent/fix-1--2`: branch does
+   not exist. Expects push to `agent/fix-1--2` and PR creation against it.
+   `Action == UpsertSuffixed`, `Branch == "agent/fix-1--2"`.
 
 4. **`TestUpsertBranchAndPR_SkippedWhenMerged`** — branch exists, PR state
    `MERGED`. Expects no `git push`, no `pr create`, no `pr comment`. Returns
@@ -170,7 +179,7 @@ shell `case` pattern as `TestListIssuesWithLabels`).
    nil error.
 
 5. **`TestUpsertBranchAndPR_SuffixCapExceeded`** — all of `agent/fix-1` and
-   `agent/fix-1-2` through `agent/fix-1-10` resolve to closed PRs. Expects a
+   `agent/fix-1--2` through `agent/fix-1--10` resolve to closed PRs. Expects a
    non-nil error mentioning the cap.
 
 The gh-mock script uses a counter file in `$TMPDIR` to return different
@@ -198,7 +207,7 @@ scheduled run (two runs on the same issue)."
   but loses the "did someone else push in the meantime" safety net. We chose
   lease to match the issue's preference and because the extra `git fetch` is
   cheap (single ref).
-- **Timestamp-based suffix (`agent/fix-1-20260409-1018`) instead of `-2/-3`:**
+- **Timestamp-based suffix (`agent/fix-1-20260409-1018`) instead of `--2/--3`:**
   always unique in one shot, no state lookup needed, but every retried run
   becomes a new PR which defeats the "update existing PR" goal the issue
   explicitly calls out. Rejected.
