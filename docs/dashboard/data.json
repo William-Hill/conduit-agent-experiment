@@ -1,6 +1,24 @@
 {
-  "updated_at": "2026-04-09T03:08:54Z",
+  "updated_at": "2026-04-09T10:23:46Z",
   "runs": [
+    {
+      "budget_exceeded": false,
+      "cache_creation_tokens": 14825,
+      "cache_read_tokens": 222375,
+      "estimated_cost_usd": 0.3006,
+      "input_tokens": 246775,
+      "issue_number": 1268,
+      "issue_title": "Write a guide about embedding Conduit",
+      "iterations": 15,
+      "model": "claude-haiku-4-5-20251001",
+      "output_tokens": 10765,
+      "plan_chars": 42980,
+      "summary": "Let me check the connector code:",
+      "timestamp": "2026-04-09T10:23:28Z",
+      "run_id": 24185014048,
+      "status": "failure",
+      "duration_seconds": 288
+    },
     {
       "budget_exceeded": false,
       "cache_creation_tokens": 0,
