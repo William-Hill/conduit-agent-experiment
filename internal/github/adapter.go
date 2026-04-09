@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"sort"
 	"strings"
 )
 
@@ -156,6 +157,45 @@ func (a *Adapter) branchExistsOnFork(ctx context.Context, branch string) (bool, 
 		return false, nil
 	}
 	return false, fmt.Errorf("gh api repos/%s/branches/%s: %w", a.forkRepo(), branch, err)
+}
+
+// prSummary is a small PR summary used by the upsert logic.
+type prSummary struct {
+	Number    int    `json:"number"`
+	State     string `json:"state"` // OPEN, CLOSED, MERGED
+	URL       string `json:"url"`
+	CreatedAt string `json:"createdAt"`
+}
+
+// mostRecentPRForBranch returns the most recent PR (by createdAt) whose head
+// matches <fork-owner>:<branch>. Returns (nil, nil) when no PR exists.
+func (a *Adapter) mostRecentPRForBranch(ctx context.Context, branch string) (*prSummary, error) {
+	head := branch
+	if a.ForkOwner != "" && a.ForkOwner != a.Owner {
+		head = a.ForkOwner + ":" + branch
+	}
+	args := []string{
+		"pr", "list",
+		"--repo", a.repo(),
+		"--head", head,
+		"--state", "all",
+		"--json", "number,state,url,createdAt",
+		"--limit", "20",
+	}
+	out, err := a.runGH(ctx, args...)
+	if err != nil {
+		return nil, fmt.Errorf("gh pr list --head %s: %w", head, err)
+	}
+	var prs []prSummary
+	if err := json.Unmarshal([]byte(out), &prs); err != nil {
+		return nil, fmt.Errorf("parsing pr list output: %w", err)
+	}
+	if len(prs) == 0 {
+		return nil, nil
+	}
+	// Sort descending by CreatedAt (RFC3339 lexicographic sort works).
+	sort.Slice(prs, func(i, j int) bool { return prs[i].CreatedAt > prs[j].CreatedAt })
+	return &prs[0], nil
 }
 
 // ensureForkRemote adds the "fork" git remote in worktreeDir if the fork

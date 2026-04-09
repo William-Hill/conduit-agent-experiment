@@ -453,6 +453,60 @@ exit 2
 	}
 }
 
+func TestMostRecentPRForBranch_Open(t *testing.T) {
+	// Return a list with one open PR
+	_, scriptPath := writeMockScript(t, `#!/bin/sh
+cat <<'EOF'
+[{"number":42,"state":"OPEN","url":"https://github.com/up/r/pull/42","createdAt":"2026-04-09T10:00:00Z"}]
+EOF
+`)
+	a := &Adapter{Owner: "up", Repo: "r", ForkOwner: "fk", GHPath: scriptPath}
+	pr, err := a.mostRecentPRForBranch(context.Background(), "agent/fix-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pr == nil {
+		t.Fatal("expected a PR, got nil")
+	}
+	if pr.Number != 42 || pr.State != "OPEN" {
+		t.Errorf("PR = %+v, want Number=42 State=OPEN", pr)
+	}
+}
+
+func TestMostRecentPRForBranch_Empty(t *testing.T) {
+	_, scriptPath := writeMockScript(t, `#!/bin/sh
+echo '[]'
+`)
+	a := &Adapter{Owner: "up", Repo: "r", ForkOwner: "fk", GHPath: scriptPath}
+	pr, err := a.mostRecentPRForBranch(context.Background(), "agent/fix-nope")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pr != nil {
+		t.Errorf("expected nil PR, got %+v", pr)
+	}
+}
+
+func TestMostRecentPRForBranch_SortsDescending(t *testing.T) {
+	// Two PRs: older closed, newer merged. Newer should win.
+	_, scriptPath := writeMockScript(t, `#!/bin/sh
+cat <<'EOF'
+[
+  {"number":10,"state":"CLOSED","url":"https://github.com/up/r/pull/10","createdAt":"2026-04-01T10:00:00Z"},
+  {"number":20,"state":"MERGED","url":"https://github.com/up/r/pull/20","createdAt":"2026-04-05T10:00:00Z"}
+]
+EOF
+`)
+	a := &Adapter{Owner: "up", Repo: "r", ForkOwner: "fk", GHPath: scriptPath}
+	pr, err := a.mostRecentPRForBranch(context.Background(), "agent/fix-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pr.Number != 20 || pr.State != "MERGED" {
+		t.Errorf("PR = %+v, want Number=20 State=MERGED", pr)
+	}
+}
+
 func TestCreateBranchAndPush_ForkRemote(t *testing.T) {
 	// Set up a real git repo in a temp dir
 	repoDir := t.TempDir()
