@@ -89,8 +89,16 @@ func (a *Adapter) repo() string {
 	return a.Owner + "/" + a.Repo
 }
 
+// forkRepo returns "<owner>/<repo>" for the fork, falling back to the
+// upstream owner when ForkOwner is empty (same-repo / direct-push mode).
+// Callers can treat the result as the repository to query for branch and
+// PR state, regardless of whether a fork is configured.
 func (a *Adapter) forkRepo() string {
-	return a.ForkOwner + "/" + a.Repo
+	owner := a.ForkOwner
+	if owner == "" {
+		owner = a.Owner
+	}
+	return owner + "/" + a.Repo
 }
 
 const issueFields = "number,title,labels,body,createdAt,comments,assignees"
@@ -296,7 +304,7 @@ func (a *Adapter) UpsertBranchAndPR(
 	}
 	// Closed PR on the root — iterate through suffix candidates.
 	base, _ := parseSuffix(branch)
-	for n := 2; n <= maxUpsertSuffixDepth+1; n++ {
+	for n := 2; n <= maxSuffixN; n++ {
 		candidate := fmt.Sprintf("%s--%d", base, n)
 		result, err := a.upsertOnce(ctx, worktreeDir, candidate, commitMsg, prInput)
 		if errors.Is(err, errClosedPRRetry) {
@@ -312,12 +320,12 @@ func (a *Adapter) UpsertBranchAndPR(
 		}
 		return result, nil
 	}
-	return UpsertResult{}, fmt.Errorf("upsert suffix cap exceeded: tried %d variations of branch %s, all had closed PRs", maxUpsertSuffixDepth+1, base)
+	return UpsertResult{}, fmt.Errorf("upsert suffix cap exceeded: tried %d variations of branch %s, all had closed PRs", maxSuffixN, base)
 }
 
-// maxUpsertSuffixDepth is the maximum number of suffix variations tried
-// before giving up. With maxUpsertSuffixDepth=9 we try --2 through --10.
-const maxUpsertSuffixDepth = 9
+// maxSuffixN is the highest --N suffix tried before giving up. With
+// maxSuffixN=10 the retry loop tries --2 through --10 (9 variations).
+const maxSuffixN = 10
 
 // upsertOnce attempts to upsert a single branch without any retry logic.
 // Returns errClosedPRRetry when the branch has a closed PR; the caller

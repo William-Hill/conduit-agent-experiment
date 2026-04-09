@@ -360,6 +360,39 @@ exit 2
 	}
 }
 
+func TestBranchExistsOnFork_NoFork(t *testing.T) {
+	// When ForkOwner is empty (direct-push / same-repo mode), the API path
+	// must fall back to "<Owner>/<Repo>" — NOT "/<Repo>" which would be
+	// an invalid repos path and cause a non-404 error.
+	argsLogPath := filepath.Join(t.TempDir(), "args.log")
+	script := `#!/bin/sh
+echo "$*" > ` + argsLogPath + `
+echo '{"name":"agent/fix-1"}'
+`
+	_, scriptPath := writeMockScript(t, script)
+
+	a := &Adapter{Owner: "up", Repo: "r", ForkOwner: "", GHPath: scriptPath}
+	exists, err := a.branchExistsOnFork(context.Background(), "agent/fix-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !exists {
+		t.Error("expected exists=true")
+	}
+
+	logged, err := os.ReadFile(argsLogPath)
+	if err != nil {
+		t.Fatalf("reading args log: %v", err)
+	}
+	loggedStr := string(logged)
+	if !strings.Contains(loggedStr, "repos/up/r/branches/agent/fix-1") {
+		t.Errorf("expected API path to use Owner/Repo fallback, got: %s", loggedStr)
+	}
+	if strings.Contains(loggedStr, "repos//r/") {
+		t.Errorf("API path has empty owner segment: %s", loggedStr)
+	}
+}
+
 func TestMostRecentPRForBranch_Open(t *testing.T) {
 	// Return a list with one open PR
 	_, scriptPath := writeMockScript(t, `#!/bin/sh
