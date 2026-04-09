@@ -382,11 +382,7 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 	prURL := ""
 	if ghAdapter != nil && policy.AllowPush && (architectReview.Recommendation == agents.RecommendApprove) {
 		branchName := buildBranchName(task)
-
 		commitMsg := fmt.Sprintf("agent: %s\n\n%s", task.Title, plan.PlanSummary)
-		if err := ghAdapter.CreateBranchAndPush(ctx, runner.WorkDir, branchName, commitMsg); err != nil {
-			return nil, fmt.Errorf("creating branch and pushing: %w", err)
-		}
 
 		prBody := buildPRBody(dossier, plan, verifierReport, architectReview)
 		baseBranch := ghAdapter.BaseBranch
@@ -394,16 +390,18 @@ func RunWorkflow(ctx context.Context, task models.Task, cfg config.Config, mcfg 
 			baseBranch = "main"
 		}
 
-		url, err := ghAdapter.CreateDraftPR(ctx, github.DraftPRInput{
+		upsert, err := ghAdapter.UpsertBranchAndPR(ctx, runner.WorkDir, branchName, commitMsg, github.DraftPRInput{
 			Title: task.Title,
 			Body:  prBody,
-			Head:  branchName,
 			Base:  baseBranch,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("creating draft PR: %w", err)
+			return nil, fmt.Errorf("upserting branch and PR: %w", err)
 		}
-		prURL = url
+		prURL = upsert.PRURL
+		if upsert.Action == github.UpsertSkippedMerged {
+			log.Printf("orchestrator: branch %s already merged upstream, skipping PR creation", branchName)
+		}
 	}
 
 	// --- 12. Build evaluation ---

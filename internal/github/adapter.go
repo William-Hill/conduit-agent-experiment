@@ -4,9 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"os/exec"
+	"regexp"
+	"sort"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Label represents a GitHub issue label.
@@ -39,6 +45,30 @@ type DraftPRInput struct {
 	Base  string // target branch on upstream
 }
 
+// UpsertAction describes what UpsertBranchAndPR did. The five variants
+// correspond to distinct starting states:
+//   - UpsertCreated: branch didn't exist, fresh push + new PR
+//   - UpsertForcePushed: branch existed but had no PR (orphan), force-pushed + new PR
+//   - UpsertUpdated: branch had an open PR, force-pushed + comment on existing PR
+//   - UpsertSuffixed: branch had a closed PR, pushed under -N suffix + new PR
+//   - UpsertSkippedMerged: branch had a merged PR, no push, no PR
+type UpsertAction string
+
+const (
+	UpsertCreated       UpsertAction = "created"        // fresh branch + new PR
+	UpsertForcePushed   UpsertAction = "force_pushed"   // branch existed but no PR, force-pushed + new PR
+	UpsertUpdated       UpsertAction = "updated"        // force-pushed + commented on existing open PR
+	UpsertSuffixed      UpsertAction = "suffixed"       // prior PR closed, new branch with -N suffix + new PR
+	UpsertSkippedMerged UpsertAction = "skipped_merged" // prior PR merged, no push, no PR
+)
+
+// UpsertResult is returned by UpsertBranchAndPR.
+type UpsertResult struct {
+	PRURL  string       // empty iff Action == UpsertSkippedMerged
+	Branch string       // final branch name (may differ from input if suffixed)
+	Action UpsertAction // which decision branch was taken
+}
+
 // Adapter wraps the gh CLI for GitHub operations.
 type Adapter struct {
 	Owner      string
@@ -57,6 +87,18 @@ func (a *Adapter) ghPath() string {
 
 func (a *Adapter) repo() string {
 	return a.Owner + "/" + a.Repo
+}
+
+// forkRepo returns "<owner>/<repo>" for the fork, falling back to the
+// upstream owner when ForkOwner is empty (same-repo / direct-push mode).
+// Callers can treat the result as the repository to query for branch and
+// PR state, regardless of whether a fork is configured.
+func (a *Adapter) forkRepo() string {
+	owner := a.ForkOwner
+	if owner == "" {
+		owner = a.Owner
+	}
+	return owner + "/" + a.Repo
 }
 
 const issueFields = "number,title,labels,body,createdAt,comments,assignees"
@@ -115,28 +157,82 @@ func (a *Adapter) GetIssue(ctx context.Context, number int) (*Issue, error) {
 	return &issue, nil
 }
 
-// CreateBranchAndPush creates a branch, stages all changes, commits and pushes
-// in the given worktree directory.
-func (a *Adapter) CreateBranchAndPush(ctx context.Context, worktreeDir, branch, commitMsg string) error {
+// branchExistsOnFork returns true if the branch exists on the fork. A 404
+// from the GitHub API is interpreted as "not exists" (nil error). Any other
+// error is returned as-is.
+func (a *Adapter) branchExistsOnFork(ctx context.Context, branch string) (bool, error) {
+	_, err := a.runGH(ctx, "api", fmt.Sprintf("repos/%s/branches/%s", a.forkRepo(), branch), "--silent")
+	if err == nil {
+		return true, nil
+	}
+	// gh surfaces "HTTP 404" in stderr for not-found. runGH wraps stderr into the error string.
+	if strings.Contains(err.Error(), "HTTP 404") {
+		return false, nil
+	}
+	return false, fmt.Errorf("gh api repos/%s/branches/%s: %w", a.forkRepo(), branch, err)
+}
+
+// prSummary is a small PR summary used by the upsert logic.
+type prSummary struct {
+	Number    int    `json:"number"`
+	State     string `json:"state"` // OPEN, CLOSED, MERGED
+	URL       string `json:"url"`
+	CreatedAt string `json:"createdAt"`
+}
+
+// mostRecentPRForBranch returns the most recent PR (by createdAt) whose head
+// matches <fork-owner>:<branch>. Returns (nil, nil) when no PR exists.
+func (a *Adapter) mostRecentPRForBranch(ctx context.Context, branch string) (*prSummary, error) {
+	head := branch
+	if a.ForkOwner != "" && a.ForkOwner != a.Owner {
+		head = a.ForkOwner + ":" + branch
+	}
+	args := []string{
+		"pr", "list",
+		"--repo", a.repo(),
+		"--head", head,
+		"--state", "all",
+		"--json", "number,state,url,createdAt",
+		"--limit", "20",
+	}
+	out, err := a.runGH(ctx, args...)
+	if err != nil {
+		return nil, fmt.Errorf("gh pr list --head %s: %w", head, err)
+	}
+	var prs []prSummary
+	if err := json.Unmarshal([]byte(out), &prs); err != nil {
+		return nil, fmt.Errorf("parsing pr list output: %w", err)
+	}
+	if len(prs) == 0 {
+		return nil, nil
+	}
+	// Sort descending by CreatedAt (RFC3339 lexicographic sort works).
+	sort.Slice(prs, func(i, j int) bool { return prs[i].CreatedAt > prs[j].CreatedAt })
+	return &prs[0], nil
+}
+
+// ensureForkRemote adds the "fork" git remote in worktreeDir if the fork
+// differs from upstream. Idempotent — existing remotes are left alone.
+// Returns the name of the push remote ("fork" if fork differs, "origin" otherwise).
+func (a *Adapter) ensureForkRemote(ctx context.Context, worktreeDir string) string {
+	if a.ForkOwner == "" || a.ForkOwner == a.Owner {
+		return "origin"
+	}
+	forkURL := fmt.Sprintf("https://github.com/%s/%s.git", a.ForkOwner, a.Repo)
+	addRemote := exec.CommandContext(ctx, "git", "remote", "add", "fork", forkURL)
+	addRemote.Dir = worktreeDir
+	addRemote.CombinedOutput() // ignore error — remote may already exist
+	return "fork"
+}
+
+// commitWorktree runs `git checkout -B <branch>`, `git add -A`, `git commit -m`
+// in worktreeDir. Returns an error if any step fails.
+func (a *Adapter) commitWorktree(ctx context.Context, worktreeDir, branch, commitMsg string) error {
 	cmds := [][]string{
 		{"git", "checkout", "-B", branch},
 		{"git", "add", "-A"},
 		{"git", "commit", "-m", commitMsg},
 	}
-
-	// Determine push remote: if fork differs from upstream, add fork as a remote
-	pushRemote := "origin"
-	if a.ForkOwner != "" && a.ForkOwner != a.Owner {
-		forkURL := fmt.Sprintf("https://github.com/%s/%s.git", a.ForkOwner, a.Repo)
-		// Add fork remote (ignore error if already exists)
-		addRemote := exec.CommandContext(ctx, "git", "remote", "add", "fork", forkURL)
-		addRemote.Dir = worktreeDir
-		addRemote.CombinedOutput() // ignore error — remote may already exist
-		pushRemote = "fork"
-	}
-
-	cmds = append(cmds, []string{"git", "push", "-u", pushRemote, branch})
-
 	for _, args := range cmds {
 		cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 		cmd.Dir = worktreeDir
@@ -144,12 +240,231 @@ func (a *Adapter) CreateBranchAndPush(ctx context.Context, worktreeDir, branch, 
 			return fmt.Errorf("running %s: %w\n%s", strings.Join(args, " "), err, out)
 		}
 	}
-
 	return nil
 }
 
-// CreateDraftPR creates a draft PR via the gh CLI and returns the PR URL.
-func (a *Adapter) CreateDraftPR(ctx context.Context, input DraftPRInput) (string, error) {
+// forcePushBranch fetches the current state of <branch> from the fork, then
+// force-pushes the local HEAD to it using --force-with-lease against the
+// just-fetched sha. This means we overwrite the remote branch only if it
+// still matches what we just saw, protecting against races.
+func (a *Adapter) forcePushBranch(ctx context.Context, worktreeDir, branch string) error {
+	pushRemote := a.ensureForkRemote(ctx, worktreeDir)
+
+	// Fetch the branch so we have a remote-tracking ref for --force-with-lease.
+	fetchCmd := exec.CommandContext(ctx, "git", "fetch", pushRemote, branch)
+	fetchCmd.Dir = worktreeDir
+	if out, err := fetchCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git fetch %s %s: %w\n%s", pushRemote, branch, err, out)
+	}
+
+	// Read the fetched remote sha to pin --force-with-lease.
+	revCmd := exec.CommandContext(ctx, "git", "rev-parse", pushRemote+"/"+branch)
+	revCmd.Dir = worktreeDir
+	shaBytes, err := revCmd.Output()
+	if err != nil {
+		return fmt.Errorf("git rev-parse %s/%s: %w", pushRemote, branch, err)
+	}
+	expectedSha := strings.TrimSpace(string(shaBytes))
+
+	lease := fmt.Sprintf("--force-with-lease=%s:%s", branch, expectedSha)
+	pushCmd := exec.CommandContext(ctx, "git", "push", lease, pushRemote, "HEAD:"+branch)
+	pushCmd.Dir = worktreeDir
+	if out, err := pushCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git push --force-with-lease %s %s: %w\n%s", pushRemote, branch, err, out)
+	}
+	return nil
+}
+
+// errClosedPRRetry is an internal sentinel used by upsertOnce to signal
+// that a closed PR was encountered and the caller should try the next
+// suffix branch. It is never returned to external callers.
+var errClosedPRRetry = errors.New("closed PR, caller should retry next suffix")
+
+// UpsertBranchAndPR creates or updates a branch on the fork and its draft PR,
+// handling the cases where the branch or a prior PR already exists. Five
+// decision branches:
+//   - Create: branch doesn't exist → fresh push + new PR
+//   - ForcePushed: branch exists, no PR ever → force-push + new PR
+//   - Updated: branch has an open PR → force-push + comment on existing PR
+//   - Suffixed: branch has a closed PR → retry under a --2, --3, ... suffix
+//   - SkippedMerged: branch has a merged PR → no-op, returns cleanly
+//
+// prInput.Head is ignored — the method sets it to the final branch name.
+func (a *Adapter) UpsertBranchAndPR(
+	ctx context.Context,
+	worktreeDir string,
+	branch string,
+	commitMsg string,
+	prInput DraftPRInput,
+) (UpsertResult, error) {
+	// First attempt on the original branch.
+	result, err := a.upsertOnce(ctx, worktreeDir, branch, commitMsg, prInput)
+	if !errors.Is(err, errClosedPRRetry) {
+		return result, err
+	}
+	// Closed PR on the root — iterate through suffix candidates.
+	base, _ := parseSuffix(branch)
+	for n := 2; n <= maxSuffixN; n++ {
+		candidate := fmt.Sprintf("%s--%d", base, n)
+		result, err := a.upsertOnce(ctx, worktreeDir, candidate, commitMsg, prInput)
+		if errors.Is(err, errClosedPRRetry) {
+			continue
+		}
+		if err != nil {
+			return result, err
+		}
+		// Any terminal outcome at the suffixed name is reported as Suffixed,
+		// except skipped-merged which we propagate as-is (work already done upstream).
+		if result.Action != UpsertSkippedMerged {
+			result.Action = UpsertSuffixed
+		}
+		return result, nil
+	}
+	return UpsertResult{}, fmt.Errorf("upsert suffix cap exceeded: tried %d variations of branch %s, all had closed PRs", maxSuffixN, base)
+}
+
+// maxSuffixN is the highest --N suffix tried before giving up. With
+// maxSuffixN=10 the retry loop tries --2 through --10 (9 variations).
+const maxSuffixN = 10
+
+// upsertOnce attempts to upsert a single branch without any retry logic.
+// Returns errClosedPRRetry when the branch has a closed PR; the caller
+// must then iterate to the next suffix.
+func (a *Adapter) upsertOnce(
+	ctx context.Context,
+	worktreeDir string,
+	branch string,
+	commitMsg string,
+	prInput DraftPRInput,
+) (UpsertResult, error) {
+	exists, err := a.branchExistsOnFork(ctx, branch)
+	if err != nil {
+		return UpsertResult{}, fmt.Errorf("checking branch exists: %w", err)
+	}
+	if !exists {
+		return a.createFresh(ctx, worktreeDir, branch, commitMsg, prInput)
+	}
+
+	pr, err := a.mostRecentPRForBranch(ctx, branch)
+	if err != nil {
+		return UpsertResult{}, fmt.Errorf("looking up most recent PR: %w", err)
+	}
+
+	switch {
+	case pr == nil:
+		// Branch exists but no PR ever — treat as orphan, force-push and create.
+		return a.forcePushNew(ctx, worktreeDir, branch, commitMsg, prInput)
+	case pr.State == "OPEN":
+		return a.updateExisting(ctx, worktreeDir, branch, commitMsg, pr)
+	case pr.State == "MERGED":
+		log.Printf("UpsertBranchAndPR: branch %s has merged PR #%d, skipping push", branch, pr.Number)
+		return UpsertResult{Branch: branch, Action: UpsertSkippedMerged}, nil
+	case pr.State == "CLOSED":
+		return UpsertResult{}, errClosedPRRetry
+	default:
+		// Defensive: GitHub's pr.State enum is OPEN | CLOSED | MERGED at the
+		// time of writing. This guards against a future API addition.
+		return UpsertResult{}, fmt.Errorf("branch %s PR state %q not recognized", branch, pr.State)
+	}
+}
+
+// updateExisting commits, force-pushes, and posts a timestamped "Updated by
+// automated run" comment on the existing open PR.
+func (a *Adapter) updateExisting(
+	ctx context.Context,
+	worktreeDir string,
+	branch string,
+	commitMsg string,
+	pr *prSummary,
+) (UpsertResult, error) {
+	if err := a.commitWorktree(ctx, worktreeDir, branch, commitMsg); err != nil {
+		return UpsertResult{}, fmt.Errorf("commit worktree: %w", err)
+	}
+	if err := a.forcePushBranch(ctx, worktreeDir, branch); err != nil {
+		return UpsertResult{}, fmt.Errorf("force push: %w", err)
+	}
+	body := fmt.Sprintf("Updated by automated run at %s", time.Now().UTC().Format(time.RFC3339))
+	if err := a.PostComment(ctx, pr.Number, body); err != nil {
+		return UpsertResult{}, fmt.Errorf("post update comment: %w", err)
+	}
+	return UpsertResult{PRURL: pr.URL, Branch: branch, Action: UpsertUpdated}, nil
+}
+
+// createPRAndResult sets prInput.Head and creates a draft PR, returning the
+// terminal UpsertResult for callers that have already committed and pushed.
+func (a *Adapter) createPRAndResult(
+	ctx context.Context,
+	branch string,
+	prInput DraftPRInput,
+	action UpsertAction,
+) (UpsertResult, error) {
+	prInput.Head = branch
+	url, err := a.createDraftPR(ctx, prInput)
+	if err != nil {
+		return UpsertResult{}, fmt.Errorf("create draft PR: %w", err)
+	}
+	return UpsertResult{PRURL: url, Branch: branch, Action: action}, nil
+}
+
+// forcePushNew handles "branch exists but no PR ever" — force-push and create.
+func (a *Adapter) forcePushNew(
+	ctx context.Context,
+	worktreeDir string,
+	branch string,
+	commitMsg string,
+	prInput DraftPRInput,
+) (UpsertResult, error) {
+	if err := a.commitWorktree(ctx, worktreeDir, branch, commitMsg); err != nil {
+		return UpsertResult{}, fmt.Errorf("commit worktree: %w", err)
+	}
+	if err := a.forcePushBranch(ctx, worktreeDir, branch); err != nil {
+		return UpsertResult{}, fmt.Errorf("force push: %w", err)
+	}
+	return a.createPRAndResult(ctx, branch, prInput, UpsertForcePushed)
+}
+
+// parseSuffix splits a branch name like "agent/fix-1" into ("agent/fix-1", 0)
+// or "agent/fix-1--3" into ("agent/fix-1", 3). The recursion marker is a
+// double dash ("--N"), which is structurally unambiguous — normal branch
+// names never contain "--", so an issue-number-based branch like
+// "agent/fix-1268" is never misread as having a suffix.
+var suffixRe = regexp.MustCompile(`^(.*)--(\d+)$`)
+
+func parseSuffix(branch string) (base string, n int) {
+	m := suffixRe.FindStringSubmatch(branch)
+	if m == nil {
+		return branch, 0
+	}
+	parsed, err := strconv.Atoi(m[2])
+	if err != nil || parsed < 2 {
+		return branch, 0
+	}
+	return m[1], parsed
+}
+
+// createFresh commits, pushes, and creates a draft PR for a branch that does
+// not already exist on the fork.
+func (a *Adapter) createFresh(
+	ctx context.Context,
+	worktreeDir string,
+	branch string,
+	commitMsg string,
+	prInput DraftPRInput,
+) (UpsertResult, error) {
+	if err := a.commitWorktree(ctx, worktreeDir, branch, commitMsg); err != nil {
+		return UpsertResult{}, fmt.Errorf("commit worktree: %w", err)
+	}
+	pushRemote := a.ensureForkRemote(ctx, worktreeDir)
+	cmd := exec.CommandContext(ctx, "git", "push", "-u", pushRemote, branch)
+	cmd.Dir = worktreeDir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return UpsertResult{}, fmt.Errorf("git push -u %s %s: %w\n%s", pushRemote, branch, err, out)
+	}
+	return a.createPRAndResult(ctx, branch, prInput, UpsertCreated)
+}
+
+// createDraftPR creates a draft PR via the gh CLI and returns the PR URL.
+func (a *Adapter) createDraftPR(ctx context.Context, input DraftPRInput) (string, error) {
 	head := input.Head
 	if a.ForkOwner != "" {
 		head = a.ForkOwner + ":" + input.Head
