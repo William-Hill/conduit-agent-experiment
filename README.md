@@ -119,6 +119,7 @@ make test
 ## Documentation
 
 - **[Onboarding Guide](docs/onboarding.md)** -- get the pipeline running in under 10 minutes
+- **[Cost Analysis](docs/cost-analysis.md)** -- canonical reference for per-run cost, deployment options, and projected feature impact
 - **[Demo Guide](docs/demo-guide.md)** -- step-by-step instructions for running the pipeline end-to-end
 - **[Experiment Journey](docs/JOURNEY.md)** -- detailed history of what we built, what worked, what failed, and where the project is headed
 - **[Experiments](docs/experiments/)** -- structured reports from each pipeline run
