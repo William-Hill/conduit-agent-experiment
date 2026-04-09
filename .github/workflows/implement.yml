@@ -54,9 +54,6 @@ jobs:
         with:
           go-version: "1.25"
 
-      - name: Set up gh CLI auth
-        run: echo "${{ secrets.GH_TOKEN }}" | gh auth login --with-token
-
       - name: Configure git identity
         run: |
           git config --global user.name "conduit-agent"
