@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os/exec"
 	"sort"
 	"strings"
@@ -322,6 +323,9 @@ func (a *Adapter) upsertWithDepth(
 	switch {
 	case pr != nil && pr.State == "OPEN":
 		return a.updateExisting(ctx, worktreeDir, branch, commitMsg, pr)
+	case pr != nil && pr.State == "MERGED":
+		log.Printf("UpsertBranchAndPR: branch %s has merged PR #%d, skipping push", branch, pr.Number)
+		return UpsertResult{Branch: branch, Action: UpsertSkippedMerged}, nil
 	default:
 		return UpsertResult{}, fmt.Errorf("branch %s PR state %q not yet handled", branch, stateOf(pr))
 	}

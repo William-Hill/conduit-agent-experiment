@@ -781,6 +781,55 @@ esac
 	}
 }
 
+// TestUpsertBranchAndPR_SkippedMerged: branch exists, most recent PR is MERGED.
+// Expects: no push, no pr create, no comment. Returns UpsertSkippedMerged.
+func TestUpsertBranchAndPR_SkippedMerged(t *testing.T) {
+	// No git setup needed — we should never push
+	repoDir := t.TempDir()
+
+	scriptDir := t.TempDir()
+	scriptPath := filepath.Join(scriptDir, "gh")
+	script := `#!/bin/sh
+case "$*" in
+  *"api repos/fk/r/branches/agent/fix-1"*)
+    echo '{"name":"agent/fix-1"}'
+    ;;
+  *"pr list"*"--head fk:agent/fix-1"*)
+    echo '[{"number":42,"state":"MERGED","url":"https://github.com/up/r/pull/42","createdAt":"2026-04-09T10:00:00Z"}]'
+    ;;
+  *)
+    echo "unexpected gh args: $*" >&2
+    exit 2
+    ;;
+esac
+`
+	if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
+		t.Fatalf("write mock: %v", err)
+	}
+
+	a := &Adapter{
+		Owner: "up", Repo: "r", BaseBranch: "main", ForkOwner: "fk",
+		GHPath: scriptPath,
+	}
+
+	result, err := a.UpsertBranchAndPR(context.Background(), repoDir,
+		"agent/fix-1", "won't run",
+		DraftPRInput{Title: "t", Body: "b", Base: "main"},
+	)
+	if err != nil {
+		t.Fatalf("UpsertBranchAndPR() unexpected error: %v", err)
+	}
+	if result.Action != UpsertSkippedMerged {
+		t.Errorf("Action = %q, want %q", result.Action, UpsertSkippedMerged)
+	}
+	if result.PRURL != "" {
+		t.Errorf("PRURL = %q, want empty", result.PRURL)
+	}
+	if result.Branch != "agent/fix-1" {
+		t.Errorf("Branch = %q, want agent/fix-1", result.Branch)
+	}
+}
+
 func TestForcePushBranch(t *testing.T) {
 	// Bare "fork" remote
 	forkDir := t.TempDir()
