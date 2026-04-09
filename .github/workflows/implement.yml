@@ -2,8 +2,9 @@ name: Run pipeline
 
 on:
   schedule:
-    # Weekly: Monday at 9am UTC
-    - cron: "0 9 * * 1"
+    # Twice daily at 9am and 9pm UTC (data collection through Apr 16)
+    # TODO: revert to weekly "0 9 * * 1" after Apr 16
+    - cron: "0 9,21 * * *"
 
   workflow_dispatch:
     inputs:
@@ -68,7 +69,7 @@ jobs:
           IMPL_ISSUE_NUMBER: ${{ github.event.inputs.issue_number || github.event.client_payload.issue_number || '' }}
           IMPL_MODEL: ${{ github.event.inputs.model || '' }}
           IMPL_MAX_COST: ${{ github.event.inputs.max_cost || '' }}
-          HITL_MODE: ${{ github.event.inputs.hitl_mode || 'full' }}
+          HITL_MODE: ${{ github.event.inputs.hitl_mode || (github.event_name == 'schedule' && 'yolo') || 'full' }}
           IMPL_ARTIFACT_DIR: ${{ runner.temp }}/pipeline-artifacts
         run: go run ./cmd/implementer
 
