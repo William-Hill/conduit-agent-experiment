@@ -1,0 +1,115 @@
+name: Update dashboard data
+
+on:
+  workflow_run:
+    workflows: ["Run pipeline"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  aggregate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Collect artifacts and build data.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          REPO="${{ github.repository }}"
+          OUTPUT="docs/dashboard/data.json"
+          WORK_DIR=$(mktemp -d)
+
+          # Fetch up to 100 workflow runs for implement.yml
+          RUNS=$(gh api \
+            "repos/${REPO}/actions/workflows/implement.yml/runs?per_page=100" \
+            --jq '.workflow_runs[] | {id: .id, conclusion: .conclusion, started_at: .run_started_at, updated_at: .updated_at}')
+
+          ENRICHED_RUNS=()
+
+          while IFS= read -r run_json; do
+            RUN_ID=$(echo "$run_json" | jq -r '.id')
+            CONCLUSION=$(echo "$run_json" | jq -r '.conclusion')
+            STARTED_AT=$(echo "$run_json" | jq -r '.started_at')
+            UPDATED_AT=$(echo "$run_json" | jq -r '.updated_at')
+
+            # Calculate duration in seconds
+            START_EPOCH=$(date -d "$STARTED_AT" +%s 2>/dev/null || echo "0")
+            END_EPOCH=$(date -d "$UPDATED_AT" +%s 2>/dev/null || echo "0")
+            DURATION_SECONDS=$((END_EPOCH - START_EPOCH))
+            if [ "$DURATION_SECONDS" -lt 0 ]; then
+              DURATION_SECONDS=0
+            fi
+
+            # Attempt to download the artifact for this run
+            ARTIFACT_DIR="${WORK_DIR}/run-${RUN_ID}"
+            mkdir -p "$ARTIFACT_DIR"
+
+            if gh run download "$RUN_ID" \
+                --repo "$REPO" \
+                --name "pipeline-run-${RUN_ID}" \
+                --dir "$ARTIFACT_DIR" \
+                2>/dev/null; then
+
+              SUMMARY_FILE="${ARTIFACT_DIR}/run-summary.json"
+              if [ -f "$SUMMARY_FILE" ]; then
+                # Enrich the run-summary.json with metadata from the Actions API
+                ENRICHED=$(jq \
+                  --argjson run_id "$RUN_ID" \
+                  --arg status "$CONCLUSION" \
+                  --argjson duration_seconds "$DURATION_SECONDS" \
+                  '. + {run_id: $run_id, status: $status, duration_seconds: $duration_seconds}' \
+                  "$SUMMARY_FILE")
+                ENRICHED_RUNS+=("$ENRICHED")
+              fi
+            fi
+            # If download fails (expired/deleted artifact), skip silently
+          done <<< "$RUNS"
+
+          # Build final JSON array from all enriched run objects
+          UPDATED_AT_NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          if [ "${#ENRICHED_RUNS[@]}" -eq 0 ]; then
+            FINAL_JSON=$(jq -n --arg updated_at "$UPDATED_AT_NOW" \
+              '{"updated_at": $updated_at, "runs": []}')
+          else
+            # Write each enriched object to a temp file, one per line, then collect
+            RUNS_FILE="${WORK_DIR}/runs.ndjson"
+            for obj in "${ENRICHED_RUNS[@]}"; do
+              echo "$obj" >> "$RUNS_FILE"
+            done
+
+            RUNS_ARRAY=$(jq -s '.' "$RUNS_FILE")
+            FINAL_JSON=$(jq -n \
+              --arg updated_at "$UPDATED_AT_NOW" \
+              --argjson runs "$RUNS_ARRAY" \
+              '{"updated_at": $updated_at, "runs": $runs}')
+          fi
+
+          # Validate JSON before writing
+          echo "$FINAL_JSON" | jq '.' > /dev/null
+
+          mkdir -p "$(dirname "$OUTPUT")"
+          echo "$FINAL_JSON" | jq '.' > "$OUTPUT"
+
+          echo "Wrote ${#ENRICHED_RUNS[@]} run(s) to $OUTPUT"
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/dashboard/data.json
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore(dashboard): update data.json [skip ci]"
+            git push
+          fi
