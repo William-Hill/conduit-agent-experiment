@@ -251,8 +251,10 @@ func main() {
 		log.Printf("Created suffixed PR on %s: %s", branch, prURL)
 	case github.UpsertForcePushed:
 		log.Printf("Force-pushed orphan branch %s, new PR: %s", branch, prURL)
-	default:
+	case github.UpsertCreated:
 		log.Printf("Draft PR created: %s", prURL)
+	default:
+		log.Printf("PR upserted (%s): %s", upsert.Action, prURL)
 	}
 
 	// Update artifact with PR URL (skipped when no PR was created)

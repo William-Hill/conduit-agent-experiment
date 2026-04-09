@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os/exec"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -265,10 +267,19 @@ func (a *Adapter) forcePushBranch(ctx context.Context, worktreeDir, branch strin
 	return nil
 }
 
+// errClosedPRRetry is an internal sentinel used by upsertOnce to signal
+// that a closed PR was encountered and the caller should try the next
+// suffix branch. It is never returned to external callers.
+var errClosedPRRetry = errors.New("closed PR, caller should retry next suffix")
+
 // UpsertBranchAndPR creates or updates a branch on the fork and its draft PR,
-// handling the cases where the branch or a prior PR already exists. See
-// docs/superpowers/specs/2026-04-09-pr-upsert-branch-collision-design.md for
-// the full decision tree.
+// handling the cases where the branch or a prior PR already exists. Five
+// decision branches:
+//   - Create: branch doesn't exist → fresh push + new PR
+//   - ForcePushed: branch exists, no PR ever → force-push + new PR
+//   - Updated: branch has an open PR → force-push + comment on existing PR
+//   - Suffixed: branch has a closed PR → retry under a --2, --3, ... suffix
+//   - SkippedMerged: branch has a merged PR → no-op, returns cleanly
 //
 // prInput.Head is ignored — the method sets it to the final branch name.
 func (a *Adapter) UpsertBranchAndPR(
@@ -278,20 +289,45 @@ func (a *Adapter) UpsertBranchAndPR(
 	commitMsg string,
 	prInput DraftPRInput,
 ) (UpsertResult, error) {
-	return a.upsertWithDepth(ctx, worktreeDir, branch, commitMsg, prInput, 0)
+	// First attempt on the original branch.
+	result, err := a.upsertOnce(ctx, worktreeDir, branch, commitMsg, prInput)
+	if !errors.Is(err, errClosedPRRetry) {
+		return result, err
+	}
+	// Closed PR on the root — iterate through suffix candidates.
+	base, _ := parseSuffix(branch)
+	for n := 2; n <= maxUpsertSuffixDepth+1; n++ {
+		candidate := fmt.Sprintf("%s--%d", base, n)
+		result, err := a.upsertOnce(ctx, worktreeDir, candidate, commitMsg, prInput)
+		if errors.Is(err, errClosedPRRetry) {
+			continue
+		}
+		if err != nil {
+			return result, err
+		}
+		// Any terminal outcome at the suffixed name is reported as Suffixed,
+		// except skipped-merged which we propagate as-is (work already done upstream).
+		if result.Action != UpsertSkippedMerged {
+			result.Action = UpsertSuffixed
+		}
+		return result, nil
+	}
+	return UpsertResult{}, fmt.Errorf("upsert suffix cap exceeded: tried %d variations of branch %s, all had closed PRs", maxUpsertSuffixDepth+1, base)
 }
 
-// maxUpsertSuffixDepth bounds the suffix search when prior PRs are closed.
-// -2, -3, ..., -10 → depth 9.
+// maxUpsertSuffixDepth is the maximum number of suffix variations tried
+// before giving up. With maxUpsertSuffixDepth=9 we try --2 through --10.
 const maxUpsertSuffixDepth = 9
 
-func (a *Adapter) upsertWithDepth(
+// upsertOnce attempts to upsert a single branch without any retry logic.
+// Returns errClosedPRRetry when the branch has a closed PR; the caller
+// must then iterate to the next suffix.
+func (a *Adapter) upsertOnce(
 	ctx context.Context,
 	worktreeDir string,
 	branch string,
 	commitMsg string,
 	prInput DraftPRInput,
-	depth int,
 ) (UpsertResult, error) {
 	exists, err := a.branchExistsOnFork(ctx, branch)
 	if err != nil {
@@ -307,17 +343,19 @@ func (a *Adapter) upsertWithDepth(
 	}
 
 	switch {
-	case pr != nil && pr.State == "OPEN":
-		return a.updateExisting(ctx, worktreeDir, branch, commitMsg, pr)
-	case pr != nil && pr.State == "MERGED":
-		log.Printf("UpsertBranchAndPR: branch %s has merged PR #%d, skipping push", branch, pr.Number)
-		return UpsertResult{Branch: branch, Action: UpsertSkippedMerged}, nil
-	case pr != nil && pr.State == "CLOSED":
-		return a.recurseSuffixed(ctx, worktreeDir, branch, commitMsg, prInput, depth)
 	case pr == nil:
 		// Branch exists but no PR ever — treat as orphan, force-push and create.
 		return a.forcePushNew(ctx, worktreeDir, branch, commitMsg, prInput)
+	case pr.State == "OPEN":
+		return a.updateExisting(ctx, worktreeDir, branch, commitMsg, pr)
+	case pr.State == "MERGED":
+		log.Printf("UpsertBranchAndPR: branch %s has merged PR #%d, skipping push", branch, pr.Number)
+		return UpsertResult{Branch: branch, Action: UpsertSkippedMerged}, nil
+	case pr.State == "CLOSED":
+		return UpsertResult{}, errClosedPRRetry
 	default:
+		// Defensive: GitHub's pr.State enum is OPEN | CLOSED | MERGED at the
+		// time of writing. This guards against a future API addition.
 		return UpsertResult{}, fmt.Errorf("branch %s PR state %q not recognized", branch, pr.State)
 	}
 }
@@ -344,36 +382,20 @@ func (a *Adapter) updateExisting(
 	return UpsertResult{PRURL: pr.URL, Branch: branch, Action: UpsertUpdated}, nil
 }
 
-// recurseSuffixed handles the CLOSED case by recursing into the next suffix.
-// It strips any existing -N suffix from the current branch name and increments.
-func (a *Adapter) recurseSuffixed(
+// createPRAndResult sets prInput.Head and creates a draft PR, returning the
+// terminal UpsertResult for callers that have already committed and pushed.
+func (a *Adapter) createPRAndResult(
 	ctx context.Context,
-	worktreeDir string,
 	branch string,
-	commitMsg string,
 	prInput DraftPRInput,
-	depth int,
+	action UpsertAction,
 ) (UpsertResult, error) {
-	if depth >= maxUpsertSuffixDepth {
-		return UpsertResult{}, fmt.Errorf("upsert suffix cap exceeded: tried %d variations of branch %s, all had closed PRs", maxUpsertSuffixDepth+1, branch)
-	}
-	base, cur := parseSuffix(branch)
-	next := cur + 1
-	if next < 2 {
-		next = 2
-	}
-	nextBranch := fmt.Sprintf("%s--%d", base, next)
-	result, err := a.upsertWithDepth(ctx, worktreeDir, nextBranch, commitMsg, prInput, depth+1)
+	prInput.Head = branch
+	url, err := a.createDraftPR(ctx, prInput)
 	if err != nil {
-		return result, err
+		return UpsertResult{}, fmt.Errorf("create draft PR: %w", err)
 	}
-	// Any terminal outcome at the suffixed name is reported as Suffixed so
-	// callers can tell the suffix logic kicked in, EXCEPT skipped-merged which
-	// we propagate as-is (the work is already done upstream).
-	if result.Action != UpsertSkippedMerged {
-		result.Action = UpsertSuffixed
-	}
-	return result, nil
+	return UpsertResult{PRURL: url, Branch: branch, Action: action}, nil
 }
 
 // forcePushNew handles "branch exists but no PR ever" — force-push and create.
@@ -390,12 +412,7 @@ func (a *Adapter) forcePushNew(
 	if err := a.forcePushBranch(ctx, worktreeDir, branch); err != nil {
 		return UpsertResult{}, fmt.Errorf("force push: %w", err)
 	}
-	prInput.Head = branch
-	url, err := a.createDraftPR(ctx, prInput)
-	if err != nil {
-		return UpsertResult{}, fmt.Errorf("create draft PR: %w", err)
-	}
-	return UpsertResult{PRURL: url, Branch: branch, Action: UpsertForcePushed}, nil
+	return a.createPRAndResult(ctx, branch, prInput, UpsertForcePushed)
 }
 
 // parseSuffix splits a branch name like "agent/fix-1" into ("agent/fix-1", 0)
@@ -410,8 +427,8 @@ func parseSuffix(branch string) (base string, n int) {
 	if m == nil {
 		return branch, 0
 	}
-	var parsed int
-	if _, err := fmt.Sscanf(m[2], "%d", &parsed); err != nil || parsed < 2 {
+	parsed, err := strconv.Atoi(m[2])
+	if err != nil || parsed < 2 {
 		return branch, 0
 	}
 	return m[1], parsed
@@ -435,12 +452,7 @@ func (a *Adapter) createFresh(
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return UpsertResult{}, fmt.Errorf("git push -u %s %s: %w\n%s", pushRemote, branch, err, out)
 	}
-	prInput.Head = branch
-	url, err := a.createDraftPR(ctx, prInput)
-	if err != nil {
-		return UpsertResult{}, fmt.Errorf("create draft PR: %w", err)
-	}
-	return UpsertResult{PRURL: url, Branch: branch, Action: UpsertCreated}, nil
+	return a.createPRAndResult(ctx, branch, prInput, UpsertCreated)
 }
 
 // createDraftPR creates a draft PR via the gh CLI and returns the PR URL.
