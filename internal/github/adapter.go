@@ -139,28 +139,28 @@ func (a *Adapter) GetIssue(ctx context.Context, number int) (*Issue, error) {
 	return &issue, nil
 }
 
-// CreateBranchAndPush creates a branch, stages all changes, commits and pushes
-// in the given worktree directory.
-func (a *Adapter) CreateBranchAndPush(ctx context.Context, worktreeDir, branch, commitMsg string) error {
+// ensureForkRemote adds the "fork" git remote in worktreeDir if the fork
+// differs from upstream. Idempotent — existing remotes are left alone.
+// Returns the name of the push remote ("fork" if fork differs, "origin" otherwise).
+func (a *Adapter) ensureForkRemote(ctx context.Context, worktreeDir string) string {
+	if a.ForkOwner == "" || a.ForkOwner == a.Owner {
+		return "origin"
+	}
+	forkURL := fmt.Sprintf("https://github.com/%s/%s.git", a.ForkOwner, a.Repo)
+	addRemote := exec.CommandContext(ctx, "git", "remote", "add", "fork", forkURL)
+	addRemote.Dir = worktreeDir
+	addRemote.CombinedOutput() // ignore error — remote may already exist
+	return "fork"
+}
+
+// commitWorktree runs `git checkout -B <branch>`, `git add -A`, `git commit -m`
+// in worktreeDir. Returns an error if any step fails.
+func (a *Adapter) commitWorktree(ctx context.Context, worktreeDir, branch, commitMsg string) error {
 	cmds := [][]string{
 		{"git", "checkout", "-B", branch},
 		{"git", "add", "-A"},
 		{"git", "commit", "-m", commitMsg},
 	}
-
-	// Determine push remote: if fork differs from upstream, add fork as a remote
-	pushRemote := "origin"
-	if a.ForkOwner != "" && a.ForkOwner != a.Owner {
-		forkURL := fmt.Sprintf("https://github.com/%s/%s.git", a.ForkOwner, a.Repo)
-		// Add fork remote (ignore error if already exists)
-		addRemote := exec.CommandContext(ctx, "git", "remote", "add", "fork", forkURL)
-		addRemote.Dir = worktreeDir
-		addRemote.CombinedOutput() // ignore error — remote may already exist
-		pushRemote = "fork"
-	}
-
-	cmds = append(cmds, []string{"git", "push", "-u", pushRemote, branch})
-
 	for _, args := range cmds {
 		cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 		cmd.Dir = worktreeDir
@@ -168,7 +168,21 @@ func (a *Adapter) CreateBranchAndPush(ctx context.Context, worktreeDir, branch, 
 			return fmt.Errorf("running %s: %w\n%s", strings.Join(args, " "), err, out)
 		}
 	}
+	return nil
+}
 
+// CreateBranchAndPush creates a branch, stages all changes, commits and pushes
+// in the given worktree directory.
+func (a *Adapter) CreateBranchAndPush(ctx context.Context, worktreeDir, branch, commitMsg string) error {
+	if err := a.commitWorktree(ctx, worktreeDir, branch, commitMsg); err != nil {
+		return err
+	}
+	pushRemote := a.ensureForkRemote(ctx, worktreeDir)
+	cmd := exec.CommandContext(ctx, "git", "push", "-u", pushRemote, branch)
+	cmd.Dir = worktreeDir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("running git push -u %s %s: %w\n%s", pushRemote, branch, err, out)
+	}
 	return nil
 }
 
