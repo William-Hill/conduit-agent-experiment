@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Label represents a GitHub issue label.
@@ -312,9 +313,48 @@ func (a *Adapter) upsertWithDepth(
 	if !exists {
 		return a.createFresh(ctx, worktreeDir, branch, commitMsg, prInput)
 	}
-	// Branch exists — decide based on most recent PR.
-	// (Remaining cases implemented in later tasks.)
-	return UpsertResult{}, fmt.Errorf("branch %s exists but upsert decision not yet implemented", branch)
+
+	pr, err := a.mostRecentPRForBranch(ctx, branch)
+	if err != nil {
+		return UpsertResult{}, fmt.Errorf("looking up most recent PR: %w", err)
+	}
+
+	switch {
+	case pr != nil && pr.State == "OPEN":
+		return a.updateExisting(ctx, worktreeDir, branch, commitMsg, pr)
+	default:
+		return UpsertResult{}, fmt.Errorf("branch %s PR state %q not yet handled", branch, stateOf(pr))
+	}
+}
+
+// stateOf returns a human-readable state for the pr, or "none" when pr is nil.
+func stateOf(pr *prSummary) string {
+	if pr == nil {
+		return "none"
+	}
+	return pr.State
+}
+
+// updateExisting commits, force-pushes, and posts a timestamped "Updated by
+// automated run" comment on the existing open PR.
+func (a *Adapter) updateExisting(
+	ctx context.Context,
+	worktreeDir string,
+	branch string,
+	commitMsg string,
+	pr *prSummary,
+) (UpsertResult, error) {
+	if err := a.commitWorktree(ctx, worktreeDir, branch, commitMsg); err != nil {
+		return UpsertResult{}, fmt.Errorf("commit worktree: %w", err)
+	}
+	if err := a.forcePushBranch(ctx, worktreeDir, branch); err != nil {
+		return UpsertResult{}, fmt.Errorf("force push: %w", err)
+	}
+	body := fmt.Sprintf("Updated by automated run at %s", time.Now().UTC().Format(time.RFC3339))
+	if err := a.PostComment(ctx, pr.Number, body); err != nil {
+		return UpsertResult{}, fmt.Errorf("post update comment: %w", err)
+	}
+	return UpsertResult{PRURL: pr.URL, Branch: branch, Action: UpsertUpdated}, nil
 }
 
 // createFresh commits, pushes, and creates a draft PR for a branch that does
