@@ -602,6 +602,82 @@ func TestCreateBranchAndPush_ForkRemote(t *testing.T) {
 // TestForcePushBranch uses two real bare repos: one acts as the fork remote,
 // one acts as a "stale" clone to simulate the branch already existing on the
 // fork with unrelated history.
+// TestUpsertBranchAndPR_Create: branch doesn't exist on fork, no prior PR.
+// Expects the fresh-create path: commit, push, pr create.
+func TestUpsertBranchAndPR_Create(t *testing.T) {
+	// Set up a worktree + bare fork remote so the push path works.
+	forkDir := t.TempDir()
+	if out, err := runShellInDir("git init --bare", forkDir).CombinedOutput(); err != nil {
+		t.Fatalf("fork init: %v\n%s", err, out)
+	}
+
+	repoDir := t.TempDir()
+	setup := []string{
+		"git init -b main",
+		"git config user.email t@t.com",
+		"git config user.name t",
+		"echo hello > file.txt",
+		"git add .",
+		"git commit -m initial",
+		"echo new > new.txt",
+	}
+	for _, c := range setup {
+		if out, err := runShellInDir(c, repoDir).CombinedOutput(); err != nil {
+			t.Fatalf("setup %q: %v\n%s", c, err, out)
+		}
+	}
+	if out, err := runShellInDir("git remote add fork "+forkDir, repoDir).CombinedOutput(); err != nil {
+		t.Fatalf("add fork remote: %v\n%s", err, out)
+	}
+
+	// gh mock: 404 for branch lookup, [] for pr list, URL for pr create.
+	scriptDir := t.TempDir()
+	scriptPath := filepath.Join(scriptDir, "gh")
+	script := `#!/bin/sh
+case "$*" in
+  *"api repos/fk/r/branches/agent/fix-1"*)
+    echo 'gh: Not Found (HTTP 404)' >&2
+    exit 1
+    ;;
+  *"pr list"*"--head fk:agent/fix-1"*)
+    echo '[]'
+    ;;
+  *"pr create"*)
+    echo 'https://github.com/up/r/pull/99'
+    ;;
+  *)
+    echo "unexpected gh args: $*" >&2
+    exit 2
+    ;;
+esac
+`
+	if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
+		t.Fatalf("write mock: %v", err)
+	}
+
+	a := &Adapter{
+		Owner: "up", Repo: "r", BaseBranch: "main", ForkOwner: "fk",
+		GHPath: scriptPath,
+	}
+
+	result, err := a.UpsertBranchAndPR(context.Background(), repoDir,
+		"agent/fix-1", "test commit",
+		DraftPRInput{Title: "t", Body: "b", Base: "main"},
+	)
+	if err != nil {
+		t.Fatalf("UpsertBranchAndPR() error: %v", err)
+	}
+	if result.Action != UpsertCreated {
+		t.Errorf("Action = %q, want %q", result.Action, UpsertCreated)
+	}
+	if result.Branch != "agent/fix-1" {
+		t.Errorf("Branch = %q, want agent/fix-1", result.Branch)
+	}
+	if result.PRURL != "https://github.com/up/r/pull/99" {
+		t.Errorf("PRURL = %q, want https://github.com/up/r/pull/99", result.PRURL)
+	}
+}
+
 func TestForcePushBranch(t *testing.T) {
 	// Bare "fork" remote
 	forkDir := t.TempDir()

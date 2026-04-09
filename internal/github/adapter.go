@@ -277,6 +277,66 @@ func (a *Adapter) forcePushBranch(ctx context.Context, worktreeDir, branch strin
 	return nil
 }
 
+// UpsertBranchAndPR creates or updates a branch on the fork and its draft PR,
+// handling the cases where the branch or a prior PR already exists. See
+// docs/superpowers/specs/2026-04-09-pr-upsert-branch-collision-design.md for
+// the full decision tree.
+//
+// prInput.Head is ignored — the method sets it to the final branch name.
+func (a *Adapter) UpsertBranchAndPR(
+	ctx context.Context,
+	worktreeDir string,
+	branch string,
+	commitMsg string,
+	prInput DraftPRInput,
+) (UpsertResult, error) {
+	return a.upsertWithDepth(ctx, worktreeDir, branch, commitMsg, prInput, 0)
+}
+
+// maxUpsertSuffixDepth bounds the suffix search when prior PRs are closed.
+// -2, -3, ..., -10 → depth 9.
+const maxUpsertSuffixDepth = 9
+
+func (a *Adapter) upsertWithDepth(
+	ctx context.Context,
+	worktreeDir string,
+	branch string,
+	commitMsg string,
+	prInput DraftPRInput,
+	depth int,
+) (UpsertResult, error) {
+	exists, err := a.branchExistsOnFork(ctx, branch)
+	if err != nil {
+		return UpsertResult{}, fmt.Errorf("checking branch exists: %w", err)
+	}
+	if !exists {
+		return a.createFresh(ctx, worktreeDir, branch, commitMsg, prInput)
+	}
+	// Branch exists — decide based on most recent PR.
+	// (Remaining cases implemented in later tasks.)
+	return UpsertResult{}, fmt.Errorf("branch %s exists but upsert decision not yet implemented", branch)
+}
+
+// createFresh commits, pushes, and creates a draft PR for a branch that does
+// not already exist on the fork.
+func (a *Adapter) createFresh(
+	ctx context.Context,
+	worktreeDir string,
+	branch string,
+	commitMsg string,
+	prInput DraftPRInput,
+) (UpsertResult, error) {
+	if err := a.CreateBranchAndPush(ctx, worktreeDir, branch, commitMsg); err != nil {
+		return UpsertResult{}, fmt.Errorf("create branch and push: %w", err)
+	}
+	prInput.Head = branch
+	url, err := a.CreateDraftPR(ctx, prInput)
+	if err != nil {
+		return UpsertResult{}, fmt.Errorf("create draft PR: %w", err)
+	}
+	return UpsertResult{PRURL: url, Branch: branch, Action: UpsertCreated}, nil
+}
+
 // CreateDraftPR creates a draft PR via the gh CLI and returns the PR URL.
 func (a *Adapter) CreateDraftPR(ctx context.Context, input DraftPRInput) (string, error) {
 	head := input.Head
