@@ -245,6 +245,38 @@ func (a *Adapter) CreateBranchAndPush(ctx context.Context, worktreeDir, branch, 
 	return nil
 }
 
+// forcePushBranch fetches the current state of <branch> from the fork, then
+// force-pushes the local HEAD to it using --force-with-lease against the
+// just-fetched sha. This means we overwrite the remote branch only if it
+// still matches what we just saw, protecting against races.
+func (a *Adapter) forcePushBranch(ctx context.Context, worktreeDir, branch string) error {
+	pushRemote := a.ensureForkRemote(ctx, worktreeDir)
+
+	// Fetch the branch so we have a remote-tracking ref for --force-with-lease.
+	fetchCmd := exec.CommandContext(ctx, "git", "fetch", pushRemote, branch)
+	fetchCmd.Dir = worktreeDir
+	if out, err := fetchCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git fetch %s %s: %w\n%s", pushRemote, branch, err, out)
+	}
+
+	// Read the fetched remote sha to pin --force-with-lease.
+	revCmd := exec.CommandContext(ctx, "git", "rev-parse", pushRemote+"/"+branch)
+	revCmd.Dir = worktreeDir
+	shaBytes, err := revCmd.Output()
+	if err != nil {
+		return fmt.Errorf("git rev-parse %s/%s: %w", pushRemote, branch, err)
+	}
+	expectedSha := strings.TrimSpace(string(shaBytes))
+
+	lease := fmt.Sprintf("--force-with-lease=%s:%s", branch, expectedSha)
+	pushCmd := exec.CommandContext(ctx, "git", "push", lease, pushRemote, "HEAD:"+branch)
+	pushCmd.Dir = worktreeDir
+	if out, err := pushCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git push --force-with-lease %s %s: %w\n%s", pushRemote, branch, err, out)
+	}
+	return nil
+}
+
 // CreateDraftPR creates a draft PR via the gh CLI and returns the PR URL.
 func (a *Adapter) CreateDraftPR(ctx context.Context, input DraftPRInput) (string, error) {
 	head := input.Head

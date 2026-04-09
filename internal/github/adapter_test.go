@@ -598,3 +598,74 @@ func TestCreateBranchAndPush_ForkRemote(t *testing.T) {
 		t.Error("branch 'fork-branch' was not created")
 	}
 }
+
+// TestForcePushBranch uses two real bare repos: one acts as the fork remote,
+// one acts as a "stale" clone to simulate the branch already existing on the
+// fork with unrelated history.
+func TestForcePushBranch(t *testing.T) {
+	// Bare "fork" remote
+	forkDir := t.TempDir()
+	if out, err := runShellInDir("git init --bare", forkDir).CombinedOutput(); err != nil {
+		t.Fatalf("fork init: %v\n%s", err, out)
+	}
+
+	// Seed the fork with a stale agent/fix-1 branch by pushing from a scratch repo
+	seedDir := t.TempDir()
+	seedCmds := []string{
+		"git init -b main",
+		"git config user.email t@t.com",
+		"git config user.name t",
+		"echo seed > f.txt",
+		"git add .",
+		"git commit -m seed",
+		"git checkout -b agent/fix-1",
+		"git remote add fork " + forkDir,
+		"git push fork agent/fix-1",
+	}
+	for _, c := range seedCmds {
+		if out, err := runShellInDir(c, seedDir).CombinedOutput(); err != nil {
+			t.Fatalf("seed %q: %v\n%s", c, err, out)
+		}
+	}
+
+	// Our "worktree" is a fresh repo with unrelated history
+	repoDir := t.TempDir()
+	workCmds := []string{
+		"git init -b main",
+		"git config user.email t@t.com",
+		"git config user.name t",
+		"echo hello > file.txt",
+		"git add .",
+		"git commit -m initial",
+		"git checkout -b agent/fix-1",
+		"echo new > new.txt",
+		"git add .",
+		"git commit -m new-work",
+	}
+	for _, c := range workCmds {
+		if out, err := runShellInDir(c, repoDir).CombinedOutput(); err != nil {
+			t.Fatalf("work %q: %v\n%s", c, err, out)
+		}
+	}
+	if out, err := runShellInDir("git remote add fork "+forkDir, repoDir).CombinedOutput(); err != nil {
+		t.Fatalf("add fork remote: %v\n%s", err, out)
+	}
+
+	a := &Adapter{Owner: "up", Repo: "r", ForkOwner: "fk", GHPath: "gh"}
+	if err := a.forcePushBranch(context.Background(), repoDir, "agent/fix-1"); err != nil {
+		t.Fatalf("forcePushBranch() error: %v", err)
+	}
+
+	// Confirm fork's agent/fix-1 now points at our local HEAD
+	localSha, err := runShellInDir("git rev-parse HEAD", repoDir).Output()
+	if err != nil {
+		t.Fatalf("local rev-parse: %v", err)
+	}
+	forkSha, err := runShellInDir("git rev-parse agent/fix-1", forkDir).Output()
+	if err != nil {
+		t.Fatalf("fork rev-parse: %v", err)
+	}
+	if strings.TrimSpace(string(localSha)) != strings.TrimSpace(string(forkSha)) {
+		t.Errorf("force push didn't update remote: local=%s fork=%s", localSha, forkSha)
+	}
+}
