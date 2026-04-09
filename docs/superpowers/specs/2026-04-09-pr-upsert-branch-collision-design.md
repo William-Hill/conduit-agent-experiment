@@ -163,22 +163,28 @@ shell `case` pattern as `TestListIssuesWithLabels`).
    404; `gh pr list` returns `[]`. Expects `git push -u fork` (not force) and
    `pr create`. Final `Action == UpsertCreated`, `Branch == "agent/fix-1"`.
 
-2. **`TestUpsertBranchAndPR_Update`** — branch api returns 200; `pr list`
+2. **`TestUpsertBranchAndPR_ForcePushed`** — branch api returns 200 (branch
+   exists); `pr list` returns `[]` (no PR ever). Expects `git fetch` then
+   `git push --force-with-lease`, `pr create`, no `pr comment`. Returns
+   `UpsertResult{Action: UpsertForcePushed, PRURL: "<new-pr-url>", Branch: "agent/fix-1"}`,
+   nil error.
+
+3. **`TestUpsertBranchAndPR_Update`** — branch api returns 200; `pr list`
    returns one open PR. Expects `git fetch`, `git push --force-with-lease`,
    `gh issue comment` with a timestamped body, no `pr create`. Returns the
    existing PR URL, `Action == UpsertUpdated`.
 
-3. **`TestUpsertBranchAndPR_SuffixedWhenClosed`** — first lookup: branch
+4. **`TestUpsertBranchAndPR_SuffixedWhenClosed`** — first lookup: branch
    exists, PR state `CLOSED`. Second lookup on `agent/fix-1--2`: branch does
    not exist. Expects push to `agent/fix-1--2` and PR creation against it.
    `Action == UpsertSuffixed`, `Branch == "agent/fix-1--2"`.
 
-4. **`TestUpsertBranchAndPR_SkippedMerged`** — branch exists, PR state
+5. **`TestUpsertBranchAndPR_SkippedMerged`** — branch exists, PR state
    `MERGED`. Expects no `git push`, no `pr create`, no `pr comment`. Returns
    `UpsertResult{Action: UpsertSkippedMerged, PRURL: "", Branch: "agent/fix-1"}`,
    nil error.
 
-5. **`TestUpsertBranchAndPR_SuffixCapExceeded`** — all of `agent/fix-1` and
+6. **`TestUpsertBranchAndPR_SuffixCapExceeded`** — all of `agent/fix-1` and
    `agent/fix-1--2` through `agent/fix-1--10` resolve to closed PRs. Expects a
    non-nil error mentioning the cap.
 
