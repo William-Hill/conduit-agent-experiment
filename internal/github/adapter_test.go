@@ -998,3 +998,46 @@ func TestParseSuffix(t *testing.T) {
 		}
 	}
 }
+
+// TestUpsertBranchAndPR_SuffixCapExceeded: every candidate from agent/fix-1
+// through agent/fix-1-10 has a CLOSED PR. Expects an error mentioning the cap.
+func TestUpsertBranchAndPR_SuffixCapExceeded(t *testing.T) {
+	repoDir := t.TempDir() // unused for push since we never get there
+
+	scriptDir := t.TempDir()
+	scriptPath := filepath.Join(scriptDir, "gh")
+	// Every branch lookup returns 200; every pr list returns a CLOSED PR.
+	script := `#!/bin/sh
+case "$*" in
+  *"api repos/fk/r/branches/agent/fix-1"*)
+    echo '{"name":"agent/fix-1"}'
+    ;;
+  *"pr list"*"--head fk:agent/fix-1"*)
+    echo '[{"number":1,"state":"CLOSED","url":"https://github.com/up/r/pull/1","createdAt":"2026-04-01T10:00:00Z"}]'
+    ;;
+  *)
+    echo "unexpected gh args: $*" >&2
+    exit 2
+    ;;
+esac
+`
+	if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
+		t.Fatalf("write mock: %v", err)
+	}
+
+	a := &Adapter{
+		Owner: "up", Repo: "r", BaseBranch: "main", ForkOwner: "fk",
+		GHPath: scriptPath,
+	}
+
+	_, err := a.UpsertBranchAndPR(context.Background(), repoDir,
+		"agent/fix-1", "won't matter",
+		DraftPRInput{Title: "t", Body: "b", Base: "main"},
+	)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "cap exceeded") {
+		t.Errorf("error = %v, want containing 'cap exceeded'", err)
+	}
+}
