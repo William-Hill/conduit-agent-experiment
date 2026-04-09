@@ -8,7 +8,7 @@
 When the pipeline runs on the same issue twice (e.g., the scheduled runs at
 9am/3pm/9pm UTC hit the same top-ranked issue), the second run fails:
 
-```
+```text
 creating branch and pushing: running git push -u fork agent/fix-1268: exit status 128
 ```
 
@@ -173,7 +173,7 @@ shell `case` pattern as `TestListIssuesWithLabels`).
    not exist. Expects push to `agent/fix-1--2` and PR creation against it.
    `Action == UpsertSuffixed`, `Branch == "agent/fix-1--2"`.
 
-4. **`TestUpsertBranchAndPR_SkippedWhenMerged`** — branch exists, PR state
+4. **`TestUpsertBranchAndPR_SkippedMerged`** — branch exists, PR state
    `MERGED`. Expects no `git push`, no `pr create`, no `pr comment`. Returns
    `UpsertResult{Action: UpsertSkippedMerged, PRURL: "", Branch: "agent/fix-1"}`,
    nil error.
