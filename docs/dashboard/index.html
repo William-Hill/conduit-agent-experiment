@@ -133,7 +133,9 @@
       line-height: 1;
     }
     .kpi-value.green { color: var(--green); }
+    .kpi-value.blue  { color: var(--blue); }
     .kpi-value.amber { color: var(--amber); }
+    .kpi-value.red   { color: var(--red); }
 
     /* ── Pipeline Control ── */
     .pipeline-section { margin-bottom: 32px; }
@@ -506,11 +508,11 @@
     <div class="kpi-grid">
       <div class="kpi-card">
         <div class="kpi-label">Total Runs</div>
-        <div class="kpi-value" id="kpi-runs">—</div>
+        <div class="kpi-value green" id="kpi-runs">—</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Total Cost</div>
-        <div class="kpi-value" id="kpi-cost">—</div>
+        <div class="kpi-value green" id="kpi-cost">—</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Success Rate</div>
@@ -518,11 +520,11 @@
       </div>
       <div class="kpi-card">
         <div class="kpi-label">PRs Created</div>
-        <div class="kpi-value" id="kpi-prs">—</div>
+        <div class="kpi-value blue" id="kpi-prs">—</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Avg Iterations</div>
-        <div class="kpi-value amber" id="kpi-iters">—</div>
+        <div class="kpi-value" id="kpi-iters">—</div>
       </div>
     </div>
   </section>
@@ -857,8 +859,18 @@ async function checkCompleted() {
     summaryEl.innerHTML = `Status: <strong>${conclusion || 'unknown'}</strong>${dur ? ` &mdash; Duration: <strong>${fmtSeconds(dur)}</strong>` : ''}`;
 
     const prBtn = document.getElementById('view-pr-btn');
-    prBtn.style.display = 'inline-flex';
-    prBtn.href = data.html_url || '#';
+    // Check data.json for a matching run with a PR URL
+    const matchingRun = dashData.runs && dashData.runs.find(r => String(r.run_id) === String(activeRunId));
+    if (matchingRun && matchingRun.pr_url) {
+      prBtn.style.display = 'inline-flex';
+      prBtn.href = matchingRun.pr_url;
+      prBtn.textContent = 'View PR ↗';
+    } else {
+      // Fallback to the Actions run page
+      prBtn.style.display = 'inline-flex';
+      prBtn.href = data.html_url || '#';
+      prBtn.textContent = 'View Run ↗';
+    }
 
     activeRunId = null;
     // Auto-dismiss after 30s
@@ -911,6 +923,7 @@ document.getElementById('run-btn').addEventListener('click', async () => {
 
 // ── Load data.json ──
 let chartInstance = null;
+let dashData = { runs: [] };
 
 async function loadData() {
   let data;
@@ -925,6 +938,7 @@ async function loadData() {
     return;
   }
 
+  dashData = data;
   const runs = (data.runs || []).slice().reverse(); // most recent first for table
   const runsAsc = data.runs || [];                  // ascending for chart
 
@@ -948,7 +962,9 @@ async function loadData() {
 
   document.getElementById('kpi-runs').textContent  = fmt(total);
   document.getElementById('kpi-cost').textContent  = fmtUSD(totalCost);
-  document.getElementById('kpi-rate').textContent  = total ? rate + '%' : '—';
+  const rateEl = document.getElementById('kpi-rate');
+  rateEl.textContent = total ? rate + '%' : '—';
+  rateEl.className = 'kpi-value ' + (rate >= 80 ? 'green' : rate >= 50 ? 'amber' : 'red');
   document.getElementById('kpi-prs').textContent   = fmt(prs);
   document.getElementById('kpi-iters').textContent = avgIter;
 
