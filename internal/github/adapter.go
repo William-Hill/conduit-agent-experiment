@@ -233,21 +233,6 @@ func (a *Adapter) commitWorktree(ctx context.Context, worktreeDir, branch, commi
 	return nil
 }
 
-// CreateBranchAndPush creates a branch, stages all changes, commits and pushes
-// in the given worktree directory.
-func (a *Adapter) CreateBranchAndPush(ctx context.Context, worktreeDir, branch, commitMsg string) error {
-	if err := a.commitWorktree(ctx, worktreeDir, branch, commitMsg); err != nil {
-		return err
-	}
-	pushRemote := a.ensureForkRemote(ctx, worktreeDir)
-	cmd := exec.CommandContext(ctx, "git", "push", "-u", pushRemote, branch)
-	cmd.Dir = worktreeDir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("running git push -u %s %s: %w\n%s", pushRemote, branch, err, out)
-	}
-	return nil
-}
-
 // forcePushBranch fetches the current state of <branch> from the fork, then
 // force-pushes the local HEAD to it using --force-with-lease against the
 // just-fetched sha. This means we overwrite the remote branch only if it
@@ -406,7 +391,7 @@ func (a *Adapter) forcePushNew(
 		return UpsertResult{}, fmt.Errorf("force push: %w", err)
 	}
 	prInput.Head = branch
-	url, err := a.CreateDraftPR(ctx, prInput)
+	url, err := a.createDraftPR(ctx, prInput)
 	if err != nil {
 		return UpsertResult{}, fmt.Errorf("create draft PR: %w", err)
 	}
@@ -442,19 +427,25 @@ func (a *Adapter) createFresh(
 	commitMsg string,
 	prInput DraftPRInput,
 ) (UpsertResult, error) {
-	if err := a.CreateBranchAndPush(ctx, worktreeDir, branch, commitMsg); err != nil {
-		return UpsertResult{}, fmt.Errorf("create branch and push: %w", err)
+	if err := a.commitWorktree(ctx, worktreeDir, branch, commitMsg); err != nil {
+		return UpsertResult{}, fmt.Errorf("commit worktree: %w", err)
+	}
+	pushRemote := a.ensureForkRemote(ctx, worktreeDir)
+	cmd := exec.CommandContext(ctx, "git", "push", "-u", pushRemote, branch)
+	cmd.Dir = worktreeDir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return UpsertResult{}, fmt.Errorf("git push -u %s %s: %w\n%s", pushRemote, branch, err, out)
 	}
 	prInput.Head = branch
-	url, err := a.CreateDraftPR(ctx, prInput)
+	url, err := a.createDraftPR(ctx, prInput)
 	if err != nil {
 		return UpsertResult{}, fmt.Errorf("create draft PR: %w", err)
 	}
 	return UpsertResult{PRURL: url, Branch: branch, Action: UpsertCreated}, nil
 }
 
-// CreateDraftPR creates a draft PR via the gh CLI and returns the PR URL.
-func (a *Adapter) CreateDraftPR(ctx context.Context, input DraftPRInput) (string, error) {
+// createDraftPR creates a draft PR via the gh CLI and returns the PR URL.
+func (a *Adapter) createDraftPR(ctx context.Context, input DraftPRInput) (string, error) {
 	head := input.Head
 	if a.ForkOwner != "" {
 		head = a.ForkOwner + ":" + input.Head
