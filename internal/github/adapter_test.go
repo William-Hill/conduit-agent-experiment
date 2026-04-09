@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -504,6 +505,38 @@ EOF
 	}
 	if pr.Number != 20 || pr.State != "MERGED" {
 		t.Errorf("PR = %+v, want Number=20 State=MERGED", pr)
+	}
+}
+
+func TestMostRecentPRForBranch_NoFork(t *testing.T) {
+	// When ForkOwner is empty, head should be the bare branch name (no "owner:" prefix).
+	// Verify by capturing argv and asserting the --head value.
+	argsLogPath := filepath.Join(t.TempDir(), "args.log")
+	script := `#!/bin/sh
+echo "$*" > ` + argsLogPath + `
+echo '[{"number":7,"state":"OPEN","url":"https://github.com/up/r/pull/7","createdAt":"2026-04-09T10:00:00Z"}]'
+`
+	_, scriptPath := writeMockScript(t, script)
+
+	a := &Adapter{Owner: "up", Repo: "r", ForkOwner: "", GHPath: scriptPath}
+	pr, err := a.mostRecentPRForBranch(context.Background(), "my-branch")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pr == nil || pr.Number != 7 {
+		t.Fatalf("unexpected pr: %+v", pr)
+	}
+
+	logged, err := os.ReadFile(argsLogPath)
+	if err != nil {
+		t.Fatalf("reading args log: %v", err)
+	}
+	loggedStr := string(logged)
+	if !strings.Contains(loggedStr, "--head my-branch") {
+		t.Errorf("expected --head with bare branch name, got: %s", loggedStr)
+	}
+	if strings.Contains(loggedStr, ":my-branch") {
+		t.Errorf("should not have owner: prefix when ForkOwner is empty, got: %s", loggedStr)
 	}
 }
 
