@@ -897,3 +897,104 @@ func TestForcePushBranch(t *testing.T) {
 		t.Errorf("force push didn't update remote: local=%s fork=%s", localSha, forkSha)
 	}
 }
+
+// TestUpsertBranchAndPR_SuffixedWhenClosed: the base branch has a CLOSED PR.
+// Expects: recurse to agent/fix-1-2, which is fresh. Final branch is agent/fix-1-2.
+func TestUpsertBranchAndPR_SuffixedWhenClosed(t *testing.T) {
+	forkDir := t.TempDir()
+	if out, err := runShellInDir("git init --bare", forkDir).CombinedOutput(); err != nil {
+		t.Fatalf("fork init: %v\n%s", err, out)
+	}
+
+	repoDir := t.TempDir()
+	for _, c := range []string{
+		"git init -b main",
+		"git config user.email t@t.com",
+		"git config user.name t",
+		"echo hello > f.txt",
+		"git add .",
+		"git commit -m initial",
+		"echo new > new.txt",
+	} {
+		if out, err := runShellInDir(c, repoDir).CombinedOutput(); err != nil {
+			t.Fatalf("setup %q: %v\n%s", c, err, out)
+		}
+	}
+	if out, err := runShellInDir("git remote add fork "+forkDir, repoDir).CombinedOutput(); err != nil {
+		t.Fatalf("add fork remote: %v\n%s", err, out)
+	}
+
+	scriptDir := t.TempDir()
+	scriptPath := filepath.Join(scriptDir, "gh")
+	// Ordering matters: more specific patterns (with -2 suffix) must come
+	// before the base branch pattern, because shell case uses first-match.
+	script := `#!/bin/sh
+case "$*" in
+  *"api repos/fk/r/branches/agent/fix-1-2"*)
+    echo 'gh: Not Found (HTTP 404)' >&2
+    exit 1
+    ;;
+  *"pr list"*"--head fk:agent/fix-1-2"*)
+    echo '[]'
+    ;;
+  *"api repos/fk/r/branches/agent/fix-1"*)
+    echo '{"name":"agent/fix-1"}'
+    ;;
+  *"pr list"*"--head fk:agent/fix-1"*)
+    echo '[{"number":10,"state":"CLOSED","url":"https://github.com/up/r/pull/10","createdAt":"2026-04-01T10:00:00Z"}]'
+    ;;
+  *"pr create"*)
+    echo 'https://github.com/up/r/pull/101'
+    ;;
+  *)
+    echo "unexpected gh args: $*" >&2
+    exit 2
+    ;;
+esac
+`
+	if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
+		t.Fatalf("write mock: %v", err)
+	}
+
+	a := &Adapter{
+		Owner: "up", Repo: "r", BaseBranch: "main", ForkOwner: "fk",
+		GHPath: scriptPath,
+	}
+
+	result, err := a.UpsertBranchAndPR(context.Background(), repoDir,
+		"agent/fix-1", "suffixed commit",
+		DraftPRInput{Title: "t", Body: "b", Base: "main"},
+	)
+	if err != nil {
+		t.Fatalf("UpsertBranchAndPR() error: %v", err)
+	}
+	if result.Action != UpsertSuffixed {
+		t.Errorf("Action = %q, want %q", result.Action, UpsertSuffixed)
+	}
+	if result.Branch != "agent/fix-1-2" {
+		t.Errorf("Branch = %q, want agent/fix-1-2", result.Branch)
+	}
+	if result.PRURL != "https://github.com/up/r/pull/101" {
+		t.Errorf("PRURL = %q, want https://github.com/up/r/pull/101", result.PRURL)
+	}
+}
+
+func TestParseSuffix(t *testing.T) {
+	cases := []struct {
+		in       string
+		wantBase string
+		wantN    int
+	}{
+		{"agent/fix-1", "agent/fix-1", 0},       // issue number, not suffix
+		{"agent/fix-1268", "agent/fix-1268", 0}, // issue number
+		{"agent/fix-1-2", "agent/fix-1", 2},
+		{"agent/fix-1268-3", "agent/fix-1268", 3},
+		{"agent/task-xyz-slug", "agent/task-xyz-slug", 0},
+	}
+	for _, c := range cases {
+		base, n := parseSuffix(c.in)
+		if base != c.wantBase || n != c.wantN {
+			t.Errorf("parseSuffix(%q) = (%q, %d), want (%q, %d)", c.in, base, n, c.wantBase, c.wantN)
+		}
+	}
+}

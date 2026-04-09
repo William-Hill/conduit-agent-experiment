@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -326,8 +327,13 @@ func (a *Adapter) upsertWithDepth(
 	case pr != nil && pr.State == "MERGED":
 		log.Printf("UpsertBranchAndPR: branch %s has merged PR #%d, skipping push", branch, pr.Number)
 		return UpsertResult{Branch: branch, Action: UpsertSkippedMerged}, nil
+	case pr != nil && pr.State == "CLOSED":
+		return a.recurseSuffixed(ctx, worktreeDir, branch, commitMsg, prInput, depth)
+	case pr == nil:
+		// Branch exists but no PR ever — treat as orphan, force-push and create.
+		return a.forcePushNew(ctx, worktreeDir, branch, commitMsg, prInput)
 	default:
-		return UpsertResult{}, fmt.Errorf("branch %s PR state %q not yet handled", branch, stateOf(pr))
+		return UpsertResult{}, fmt.Errorf("branch %s PR state %q not recognized", branch, pr.State)
 	}
 }
 
@@ -359,6 +365,80 @@ func (a *Adapter) updateExisting(
 		return UpsertResult{}, fmt.Errorf("post update comment: %w", err)
 	}
 	return UpsertResult{PRURL: pr.URL, Branch: branch, Action: UpsertUpdated}, nil
+}
+
+// recurseSuffixed handles the CLOSED case by recursing into the next suffix.
+// It strips any existing -N suffix from the current branch name and increments.
+func (a *Adapter) recurseSuffixed(
+	ctx context.Context,
+	worktreeDir string,
+	branch string,
+	commitMsg string,
+	prInput DraftPRInput,
+	depth int,
+) (UpsertResult, error) {
+	if depth >= maxUpsertSuffixDepth {
+		return UpsertResult{}, fmt.Errorf("upsert suffix cap exceeded: tried %d variations of branch %s, all had closed PRs", maxUpsertSuffixDepth+1, branch)
+	}
+	base, cur := parseSuffix(branch)
+	next := cur + 1
+	if next < 2 {
+		next = 2
+	}
+	nextBranch := fmt.Sprintf("%s-%d", base, next)
+	result, err := a.upsertWithDepth(ctx, worktreeDir, nextBranch, commitMsg, prInput, depth+1)
+	if err != nil {
+		return result, err
+	}
+	// Any terminal outcome at the suffixed name is reported as Suffixed so
+	// callers can tell the suffix logic kicked in, EXCEPT skipped-merged which
+	// we propagate as-is (the work is already done upstream).
+	if result.Action != UpsertSkippedMerged {
+		result.Action = UpsertSuffixed
+	}
+	return result, nil
+}
+
+// forcePushNew handles "branch exists but no PR ever" — force-push and create.
+func (a *Adapter) forcePushNew(
+	ctx context.Context,
+	worktreeDir string,
+	branch string,
+	commitMsg string,
+	prInput DraftPRInput,
+) (UpsertResult, error) {
+	if err := a.commitWorktree(ctx, worktreeDir, branch, commitMsg); err != nil {
+		return UpsertResult{}, fmt.Errorf("commit worktree: %w", err)
+	}
+	if err := a.forcePushBranch(ctx, worktreeDir, branch); err != nil {
+		return UpsertResult{}, fmt.Errorf("force push: %w", err)
+	}
+	prInput.Head = branch
+	url, err := a.CreateDraftPR(ctx, prInput)
+	if err != nil {
+		return UpsertResult{}, fmt.Errorf("create draft PR: %w", err)
+	}
+	return UpsertResult{PRURL: url, Branch: branch, Action: UpsertForcePushed}, nil
+}
+
+// parseSuffix splits a branch name like "agent/fix-1" into ("agent/fix-1", 0)
+// or "agent/fix-1-3" into ("agent/fix-1", 3). The "base" never ends in -N for
+// N >= 2; the first call on a fresh branch returns depth 0 and produces -2.
+var suffixRe = regexp.MustCompile(`^(.*)-(\d+)$`)
+
+func parseSuffix(branch string) (base string, n int) {
+	m := suffixRe.FindStringSubmatch(branch)
+	if m == nil {
+		return branch, 0
+	}
+	// Only treat trailing -N as a suffix when 2 <= N <= maxUpsertSuffixDepth+1.
+	// This distinguishes recursion suffixes (-2 through -10) from issue numbers
+	// embedded in branch names (e.g. agent/fix-1268 has issue number 1268).
+	var parsed int
+	if _, err := fmt.Sscanf(m[2], "%d", &parsed); err != nil || parsed < 2 || parsed > maxUpsertSuffixDepth+1 {
+		return branch, 0
+	}
+	return m[1], parsed
 }
 
 // createFresh commits, pushes, and creates a draft PR for a branch that does
