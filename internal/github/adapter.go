@@ -39,6 +39,24 @@ type DraftPRInput struct {
 	Base  string // target branch on upstream
 }
 
+// UpsertAction describes what UpsertBranchAndPR did.
+type UpsertAction string
+
+const (
+	UpsertCreated       UpsertAction = "created"        // fresh branch + new PR
+	UpsertForcePushed   UpsertAction = "force_pushed"   // branch existed but no PR, force-pushed + new PR
+	UpsertUpdated       UpsertAction = "updated"        // force-pushed + commented on existing open PR
+	UpsertSuffixed      UpsertAction = "suffixed"       // prior PR closed, new branch with -N suffix + new PR
+	UpsertSkippedMerged UpsertAction = "skipped_merged" // prior PR merged, no push, no PR
+)
+
+// UpsertResult is returned by UpsertBranchAndPR.
+type UpsertResult struct {
+	PRURL  string       // empty iff Action == UpsertSkippedMerged
+	Branch string       // final branch name (may differ from input if suffixed)
+	Action UpsertAction
+}
+
 // Adapter wraps the gh CLI for GitHub operations.
 type Adapter struct {
 	Owner      string
