@@ -409,6 +409,50 @@ echo '{"data":{"resolveReviewThread":{"thread":{"id":"RT_1"}}}}'
 	}
 }
 
+func TestBranchExistsOnFork_True(t *testing.T) {
+	// gh api returns a JSON body on 200
+	_, scriptPath := writeMockScript(t, `#!/bin/sh
+echo '{"name":"agent/fix-1","commit":{"sha":"abc123"}}'
+`)
+	a := &Adapter{Owner: "up", Repo: "r", ForkOwner: "fk", GHPath: scriptPath}
+	exists, err := a.branchExistsOnFork(context.Background(), "agent/fix-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !exists {
+		t.Error("expected exists=true")
+	}
+}
+
+func TestBranchExistsOnFork_False(t *testing.T) {
+	// gh api with HTTP 404 exits non-zero with "HTTP 404" in stderr
+	_, scriptPath := writeMockScript(t, `#!/bin/sh
+echo 'gh: Not Found (HTTP 404)' >&2
+exit 1
+`)
+	a := &Adapter{Owner: "up", Repo: "r", ForkOwner: "fk", GHPath: scriptPath}
+	exists, err := a.branchExistsOnFork(context.Background(), "agent/fix-nope")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if exists {
+		t.Error("expected exists=false for 404")
+	}
+}
+
+func TestBranchExistsOnFork_OtherError(t *testing.T) {
+	// Non-404 errors should propagate
+	_, scriptPath := writeMockScript(t, `#!/bin/sh
+echo 'gh: authentication failed' >&2
+exit 2
+`)
+	a := &Adapter{Owner: "up", Repo: "r", ForkOwner: "fk", GHPath: scriptPath}
+	_, err := a.branchExistsOnFork(context.Background(), "agent/fix-1")
+	if err == nil {
+		t.Fatal("expected error for non-404 failure")
+	}
+}
+
 func TestCreateBranchAndPush_ForkRemote(t *testing.T) {
 	// Set up a real git repo in a temp dir
 	repoDir := t.TempDir()

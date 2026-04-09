@@ -139,6 +139,22 @@ func (a *Adapter) GetIssue(ctx context.Context, number int) (*Issue, error) {
 	return &issue, nil
 }
 
+// branchExistsOnFork returns true if the branch exists on the fork. A 404
+// from the GitHub API is interpreted as "not exists" (nil error). Any other
+// error is returned as-is.
+func (a *Adapter) branchExistsOnFork(ctx context.Context, branch string) (bool, error) {
+	forkRepo := a.ForkOwner + "/" + a.Repo
+	_, err := a.runGH(ctx, "api", fmt.Sprintf("repos/%s/branches/%s", forkRepo, branch), "--silent")
+	if err == nil {
+		return true, nil
+	}
+	// gh surfaces "HTTP 404" in stderr for not-found. runGH wraps stderr into the error string.
+	if strings.Contains(err.Error(), "HTTP 404") || strings.Contains(err.Error(), "Not Found") {
+		return false, nil
+	}
+	return false, fmt.Errorf("gh api repos/%s/branches/%s: %w", forkRepo, branch, err)
+}
+
 // ensureForkRemote adds the "fork" git remote in worktreeDir if the fork
 // differs from upstream. Idempotent — existing remotes are left alone.
 // Returns the name of the push remote ("fork" if fork differs, "origin" otherwise).
