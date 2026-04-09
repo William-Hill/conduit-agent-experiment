@@ -1,6 +1,24 @@
 {
-  "updated_at": "2026-04-09T10:23:46Z",
+  "updated_at": "2026-04-09T16:25:51Z",
   "runs": [
+    {
+      "budget_exceeded": false,
+      "cache_creation_tokens": 6718,
+      "cache_read_tokens": 94052,
+      "estimated_cost_usd": 0.137438,
+      "input_tokens": 103078,
+      "issue_number": 1268,
+      "issue_title": "Write a guide about embedding Conduit",
+      "iterations": 14,
+      "model": "claude-haiku-4-5-20251001",
+      "output_tokens": 6872,
+      "plan_chars": 19151,
+      "summary": "Perfect! All files have been created successfully. Let me provide a summary:\n\n## Summary\n\nI have successfully implemented the embedding guide and example as specified in the implementation plan. Here's what was created:\n\n### Files Written:\n\n1. **`docs/guides/embedding-conduit.md`** (10,396 bytes)\n   - A comprehensive markdown guide covering:\n     - Core concept of `conduit.Runtime`\n     - Runtime initialization and configuration\n     - Key configuration options (logging, API, database types)\n     - Database configuration details (InMemory, Badger, Postgres, SQLite)\n     - Running the Conduit runtime with graceful shutdown\n     - Interacting with core services (`Orchestrator` and `ProvisionService`)\n     - Code examples demonstrating pipeline creation\n\n2. **`examples/embed-conduit/go.mod`** (325 bytes)\n   - Module definition for the example application\n   - Specifies Go 1.21\n   - Depends on `github.com/conduitio/conduit v0.24.0` and `github.com/rs/zerolog v1.33.0`\n   - Includes helpful comment about using replace directives for local development\n\n3. **`examples/embed-conduit/main.go`** (5,692 bytes)\n   - A complete, self-contained example application demonstrating:\n     - Context and signal handling for graceful shutdown\n     - Configuration of the Conduit runtime with in-memory database\n     - Disabling the built-in APIs\n     - Runtime initialization and startup\n     - Waiting for runtime readiness with timeout\n     - Programmatic pipeline creation with `Orchestrator`\n     - Creating a source connector (generator) and destination connector (log)\n     - Starting the pipeline\n     - Graceful pipeline and runtime shutdown with proper error handling\n\n### Build Verification:\n✅ `go build ./...` completes successfully with no errors\n✅ All three files are in place with correct content\n✅ Ready for use and documentation",
+      "timestamp": "2026-04-09T16:25:28Z",
+      "run_id": 24201154409,
+      "status": "failure",
+      "duration_seconds": 166
+    },
     {
       "budget_exceeded": false,
       "cache_creation_tokens": 14825,
