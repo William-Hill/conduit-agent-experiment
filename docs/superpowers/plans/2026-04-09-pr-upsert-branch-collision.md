@@ -55,7 +55,7 @@ type UpsertResult struct {
 
 - [ ] **Step 2: Verify the package still builds**
 
-Run: `cd /Users/william-meroxa/Development/conduit-agent-experiment && go build ./internal/github/...`
+From the repository root, run: `go build ./internal/github/...`
 Expected: no output, exit 0.
 
 - [ ] **Step 3: Commit**
@@ -1583,7 +1583,7 @@ Once both call sites are migrated, the legacy methods have no remaining consumer
 
 - [ ] **Step 1: Verify no remaining callers**
 
-Run: `grep -rn 'CreateBranchAndPush\|CreateDraftPR' --include='*.go' /Users/william-meroxa/Development/conduit-agent-experiment`
+From the repository root, run: `grep -rn 'CreateBranchAndPush\|CreateDraftPR' --include='*.go' .`
 Expected: results only inside `internal/github/adapter.go` (the definitions + callers we're about to inline) and `internal/github/adapter_test.go` (tests we're about to delete).
 
 - [ ] **Step 2: Rename `CreateDraftPR` to `createDraftPR`**

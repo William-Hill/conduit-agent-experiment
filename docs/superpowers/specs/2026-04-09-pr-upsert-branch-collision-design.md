@@ -182,9 +182,15 @@ shell `case` pattern as `TestListIssuesWithLabels`).
    `agent/fix-1--2` through `agent/fix-1--10` resolve to closed PRs. Expects a
    non-nil error mentioning the cap.
 
-The gh-mock script uses a counter file in `$TMPDIR` to return different
-responses for repeated calls (first call → closed, second call → 404, etc.)
-in tests 3 and 5. This keeps tests deterministic without an interface mock.
+The gh-mock scripts use shell `case` matching on `$*` (the command-line
+arguments) to return different responses per gh invocation. For tests that
+need distinct responses for different branch names (e.g.
+`TestUpsertBranchAndPR_SuffixedWhenClosed`, which expects the base branch
+lookup to return 200 + a closed PR and the `--2` suffix lookup to return 404
++ `[]`), the `case` patterns are ordered more-specific-first so shell's
+first-match semantics pick the right response. This keeps tests deterministic
+without an interface mock or external state (see
+`internal/github/adapter_test.go`).
 
 ## Validation
 
