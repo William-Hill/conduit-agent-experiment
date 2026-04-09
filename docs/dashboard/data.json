@@ -1,6 +1,24 @@
 {
-  "updated_at": "2026-04-09T16:25:51Z",
+  "updated_at": "2026-04-09T21:55:21Z",
   "runs": [
+    {
+      "budget_exceeded": false,
+      "cache_creation_tokens": 9350,
+      "cache_read_tokens": 121550,
+      "estimated_cost_usd": 0.166603,
+      "input_tokens": 118563,
+      "issue_number": 1268,
+      "issue_title": "Write a guide about embedding Conduit",
+      "iterations": 13,
+      "model": "claude-haiku-4-5-20251001",
+      "output_tokens": 9608,
+      "plan_chars": 27886,
+      "summary": "Perfect! The build succeeds. Let me create a summary document:\n\n## Summary\n\nI have successfully implemented the embedding guide and runnable example for Conduit. Here's what was created:\n\n### Files Created:\n\n1. **`docs/guides/embedding-conduit.md`** (15,203 bytes)\n   - Comprehensive markdown guide covering:\n     - Prerequisites (Go 1.20+)\n     - **Section 1:** Initializing the Conduit Runtime with detailed configuration examples\n     - **Section 2:** Managing pipelines programmatically using the Orchestrator\n     - **Section 3:** Provisioning pipelines from YAML configuration files\n     - **Section 4:** Graceful shutdown patterns\n     - Further reading with links to relevant source files\n   - Includes code snippets for all three database options: BadgerDB, PostgreSQL, and in-memory\n   - Explains key configuration components like `cfg.DB`, `cfg.API.Enabled`, `cfg.Log`, etc.\n\n2. **`examples/embedded-conduit/go.mod`** (462 bytes)\n   - Go module definition for the example application\n   - Specifies Conduit and connector dependencies\n   - Uses local replace directive for development\n\n3. **`examples/embedded-conduit/main.go`** (8,830 bytes)\n   - Fully runnable Go application demonstrating:\n     - Context setup for graceful shutdown\n     - Conduit runtime initialization with BadgerDB configuration\n     - Two example functions:\n       - `runProgrammaticPipeline()`: Creates, runs, and deletes a pipeline using the Orchestrator API\n       - `runProvisionedPipeline()`: Creates and provisions a pipeline from a YAML config file\n     - Proper error handling and cleanup routines\n     - Graceful shutdown handling with channel-based coordination\n\n4. **`examples/embedded-conduit/go.sum`** (126 bytes)\n   - Placeholder file (auto-generated during `go mod tidy`)\n\n### Key Features:\n\n✅ **Build verified:** `go build ./...` runs successfully  \n✅ **Clear structure:** Guide and example are well-organized and complementary  \n✅ **Complete coverage:** Both programmatic and declarative pipeline management  \n✅ **Graceful shutdown:** Proper context handling and cleanup patterns  \n✅ **Database options:** Examples for BadgerDB, PostgreSQL, and in-memory stores  \n✅ **Runnable example:** Can be executed directly with `go run main.go` (after dependencies are resolved)  \n\nThe implementation provides developers with a clear, step-by-step guide to embed Conduit in their Go applications, along with a working example they can build upon.",
+      "timestamp": "2026-04-09T21:55:01Z",
+      "run_id": 24215165498,
+      "status": "failure",
+      "duration_seconds": 171
+    },
     {
       "budget_exceeded": false,
       "cache_creation_tokens": 6718,
