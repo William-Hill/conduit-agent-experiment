@@ -362,7 +362,7 @@ func (a *Adapter) recurseSuffixed(
 	if next < 2 {
 		next = 2
 	}
-	nextBranch := fmt.Sprintf("%s-%d", base, next)
+	nextBranch := fmt.Sprintf("%s--%d", base, next)
 	result, err := a.upsertWithDepth(ctx, worktreeDir, nextBranch, commitMsg, prInput, depth+1)
 	if err != nil {
 		return result, err
@@ -399,20 +399,19 @@ func (a *Adapter) forcePushNew(
 }
 
 // parseSuffix splits a branch name like "agent/fix-1" into ("agent/fix-1", 0)
-// or "agent/fix-1-3" into ("agent/fix-1", 3). The "base" never ends in -N for
-// N >= 2; the first call on a fresh branch returns depth 0 and produces -2.
-var suffixRe = regexp.MustCompile(`^(.*)-(\d+)$`)
+// or "agent/fix-1--3" into ("agent/fix-1", 3). The recursion marker is a
+// double dash ("--N"), which is structurally unambiguous — normal branch
+// names never contain "--", so an issue-number-based branch like
+// "agent/fix-1268" is never misread as having a suffix.
+var suffixRe = regexp.MustCompile(`^(.*)--(\d+)$`)
 
 func parseSuffix(branch string) (base string, n int) {
 	m := suffixRe.FindStringSubmatch(branch)
 	if m == nil {
 		return branch, 0
 	}
-	// Only treat trailing -N as a suffix when 2 <= N <= maxUpsertSuffixDepth+1.
-	// This distinguishes recursion suffixes (-2 through -10) from issue numbers
-	// embedded in branch names (e.g. agent/fix-1268 has issue number 1268).
 	var parsed int
-	if _, err := fmt.Sscanf(m[2], "%d", &parsed); err != nil || parsed < 2 || parsed > maxUpsertSuffixDepth+1 {
+	if _, err := fmt.Sscanf(m[2], "%d", &parsed); err != nil || parsed < 2 {
 		return branch, 0
 	}
 	return m[1], parsed

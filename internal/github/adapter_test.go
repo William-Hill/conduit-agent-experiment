@@ -773,15 +773,15 @@ func TestUpsertBranchAndPR_SuffixedWhenClosed(t *testing.T) {
 
 	scriptDir := t.TempDir()
 	scriptPath := filepath.Join(scriptDir, "gh")
-	// Ordering matters: more specific patterns (with -2 suffix) must come
+	// Ordering matters: more specific patterns (with --2 suffix) must come
 	// before the base branch pattern, because shell case uses first-match.
 	script := `#!/bin/sh
 case "$*" in
-  *"api repos/fk/r/branches/agent/fix-1-2"*)
+  *"api repos/fk/r/branches/agent/fix-1--2"*)
     echo 'gh: Not Found (HTTP 404)' >&2
     exit 1
     ;;
-  *"pr list"*"--head fk:agent/fix-1-2"*)
+  *"pr list"*"--head fk:agent/fix-1--2"*)
     echo '[]'
     ;;
   *"api repos/fk/r/branches/agent/fix-1"*)
@@ -818,8 +818,8 @@ esac
 	if result.Action != UpsertSuffixed {
 		t.Errorf("Action = %q, want %q", result.Action, UpsertSuffixed)
 	}
-	if result.Branch != "agent/fix-1-2" {
-		t.Errorf("Branch = %q, want agent/fix-1-2", result.Branch)
+	if result.Branch != "agent/fix-1--2" {
+		t.Errorf("Branch = %q, want agent/fix-1--2", result.Branch)
 	}
 	if result.PRURL != "https://github.com/up/r/pull/101" {
 		t.Errorf("PRURL = %q, want https://github.com/up/r/pull/101", result.PRURL)
@@ -832,11 +832,14 @@ func TestParseSuffix(t *testing.T) {
 		wantBase string
 		wantN    int
 	}{
-		{"agent/fix-1", "agent/fix-1", 0},       // issue number, not suffix
-		{"agent/fix-1268", "agent/fix-1268", 0}, // issue number
-		{"agent/fix-1-2", "agent/fix-1", 2},
-		{"agent/fix-1268-3", "agent/fix-1268", 3},
+		{"agent/fix-1", "agent/fix-1", 0},                           // issue number, no suffix
+		{"agent/fix-7", "agent/fix-7", 0},                           // low-numbered issue, no suffix
+		{"agent/fix-1268", "agent/fix-1268", 0},                     // high-numbered issue, no suffix
+		{"agent/fix-1--2", "agent/fix-1", 2},                        // recursion suffix
+		{"agent/fix-1268--3", "agent/fix-1268", 3},                  // recursion suffix on large issue
 		{"agent/task-xyz-slug", "agent/task-xyz-slug", 0},
+		{"agent/task-42-version-2", "agent/task-42-version-2", 0},   // slug ending in digit — no suffix
+		{"agent/task-42-version-2--2", "agent/task-42-version-2", 2}, // same but with recursion suffix
 	}
 	for _, c := range cases {
 		base, n := parseSuffix(c.in)
@@ -886,5 +889,96 @@ esac
 	}
 	if !strings.Contains(err.Error(), "cap exceeded") {
 		t.Errorf("error = %v, want containing 'cap exceeded'", err)
+	}
+}
+
+// TestUpsertBranchAndPR_ForcePushed: branch exists on fork but has no PR history.
+// Expects: force-push (not regular push) + new PR + Action == UpsertForcePushed.
+func TestUpsertBranchAndPR_ForcePushed(t *testing.T) {
+	// Bare "fork" remote with a stale branch (no PR associated)
+	forkDir := t.TempDir()
+	if out, err := runShellInDir("git init --bare", forkDir).CombinedOutput(); err != nil {
+		t.Fatalf("fork init: %v\n%s", err, out)
+	}
+	seedDir := t.TempDir()
+	for _, c := range []string{
+		"git init -b main",
+		"git config user.email t@t.com",
+		"git config user.name t",
+		"echo seed > s.txt",
+		"git add .",
+		"git commit -m seed",
+		"git checkout -b agent/fix-1",
+		"git remote add fork " + forkDir,
+		"git push fork agent/fix-1",
+	} {
+		if out, err := runShellInDir(c, seedDir).CombinedOutput(); err != nil {
+			t.Fatalf("seed %q: %v\n%s", c, err, out)
+		}
+	}
+
+	// Worktree with unrelated history on the same branch name
+	repoDir := t.TempDir()
+	for _, c := range []string{
+		"git init -b main",
+		"git config user.email t@t.com",
+		"git config user.name t",
+		"echo hello > f.txt",
+		"git add .",
+		"git commit -m initial",
+		"echo new > new.txt",
+	} {
+		if out, err := runShellInDir(c, repoDir).CombinedOutput(); err != nil {
+			t.Fatalf("work %q: %v\n%s", c, err, out)
+		}
+	}
+	if out, err := runShellInDir("git remote add fork "+forkDir, repoDir).CombinedOutput(); err != nil {
+		t.Fatalf("add fork remote: %v\n%s", err, out)
+	}
+
+	// gh mock: branch exists (200), PR list returns [] (no PR), pr create returns a URL.
+	scriptDir := t.TempDir()
+	scriptPath := filepath.Join(scriptDir, "gh")
+	script := `#!/bin/sh
+case "$*" in
+  *"api repos/fk/r/branches/agent/fix-1"*)
+    echo '{"name":"agent/fix-1"}'
+    ;;
+  *"pr list"*"--head fk:agent/fix-1"*)
+    echo '[]'
+    ;;
+  *"pr create"*)
+    echo 'https://github.com/up/r/pull/55'
+    ;;
+  *)
+    echo "unexpected gh args: $*" >&2
+    exit 2
+    ;;
+esac
+`
+	if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
+		t.Fatalf("write mock: %v", err)
+	}
+
+	a := &Adapter{
+		Owner: "up", Repo: "r", BaseBranch: "main", ForkOwner: "fk",
+		GHPath: scriptPath,
+	}
+
+	result, err := a.UpsertBranchAndPR(context.Background(), repoDir,
+		"agent/fix-1", "orphan commit",
+		DraftPRInput{Title: "t", Body: "b", Base: "main"},
+	)
+	if err != nil {
+		t.Fatalf("UpsertBranchAndPR() error: %v", err)
+	}
+	if result.Action != UpsertForcePushed {
+		t.Errorf("Action = %q, want %q", result.Action, UpsertForcePushed)
+	}
+	if result.Branch != "agent/fix-1" {
+		t.Errorf("Branch = %q, want agent/fix-1", result.Branch)
+	}
+	if result.PRURL != "https://github.com/up/r/pull/55" {
+		t.Errorf("PRURL = %q, want https://github.com/up/r/pull/55", result.PRURL)
 	}
 }
