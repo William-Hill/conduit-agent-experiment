@@ -1,24 +1,42 @@
 {
+  "updated_at": "2026-04-09T02:05:40Z",
   "runs": [
     {
-      "run_id": "24167191811",
-      "issue_number": 576,
-      "issue_title": "Error codes needs to be documented in Swagger",
-      "model": "claude-haiku-4-5-20251001",
-      "iterations": 15,
-      "input_tokens": 205097,
-      "output_tokens": 15184,
+      "budget_exceeded": false,
       "cache_creation_tokens": 8582,
       "cache_read_tokens": 128730,
       "estimated_cost_usd": 0.281017,
-      "budget_exceeded": false,
-      "pr_url": "https://github.com/ConduitIO/conduit/pull/2455",
-      "summary": "Implemented error code documentation in Swagger for Conduit API endpoints",
+      "input_tokens": 205097,
+      "issue_number": 576,
+      "issue_title": "Error codes needs to be documented in Swagger",
+      "iterations": 15,
+      "model": "claude-haiku-4-5-20251001",
+      "output_tokens": 15184,
       "plan_chars": 24215,
+      "pr_url": "https://github.com/ConduitIO/conduit/pull/2455",
+      "summary": "Let me list the directory to see what files exist:",
       "timestamp": "2026-04-09T01:20:01Z",
+      "run_id": 24167191811,
       "status": "success",
-      "duration_seconds": 464
+      "duration_seconds": 470
+    },
+    {
+      "budget_exceeded": false,
+      "cache_creation_tokens": 18187,
+      "cache_read_tokens": 272805,
+      "estimated_cost_usd": 0.389463,
+      "input_tokens": 235973,
+      "issue_number": 576,
+      "issue_title": "Error codes needs to be documented in Swagger",
+      "iterations": 15,
+      "model": "claude-haiku-4-5-20251001",
+      "output_tokens": 30698,
+      "plan_chars": 53700,
+      "summary": "Now I need to update the proto file to add the OpenAPI v2 annotation for UpdateDLQ and also import google.rpc.status. Let me do this carefully:",
+      "timestamp": "2026-04-09T01:09:24Z",
+      "run_id": 24166951604,
+      "status": "failure",
+      "duration_seconds": 308
     }
-  ],
-  "updated_at": "2026-04-09T01:30:00Z"
+  ]
 }
