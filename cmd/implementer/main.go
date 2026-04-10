@@ -249,8 +249,43 @@ func main() {
 				"\n\nFix the issues above. The build and vet checks will be re-run.",
 		}
 
+		// Derive the remaining budget so total spend across the
+		// original run + retry stays bounded by IMPL_MAX_COST (the
+		// contract the PR description promised). RunAgent enforces
+		// maxCost per invocation, so passing implMaxCost unchanged
+		// would let a run that spent 90% of the cap spend nearly the
+		// whole cap again on retry.
+		//
+		// implMaxCost == 0 means "no limit" — preserve that by
+		// passing 0 through unchanged.
+		retryBudget := implMaxCost
+		if implMaxCost > 0 {
+			costModel := modelName
+			if costModel == "" {
+				costModel = "claude-haiku-4-5-20251001"
+			}
+			firstRunCost := cost.CalculateWithCache(costModel,
+				result.InputTokens, result.CacheCreationTokens,
+				result.CacheReadTokens, result.OutputTokens)
+			retryBudget = implMaxCost - firstRunCost
+			if retryBudget <= 0 {
+				log.Printf("No budget remaining after first run ($%.4f / $%.4f) — halting without retry",
+					firstRunCost, implMaxCost)
+				result.BudgetExceeded = true
+				if artifactDir != "" {
+					writeRunArtifacts(artifactDir, issue, result, modelName, plan)
+				}
+				writeCodeReviewArtifact(artifactDir, verdict, true)
+				os.RemoveAll(repoDir)
+				os.RemoveAll(dossierDir)
+				os.Exit(1)
+			}
+			log.Printf("Retry budget: $%.4f remaining (spent $%.4f on first pass of $%.4f cap)",
+				retryBudget, firstRunCost, implMaxCost)
+		}
+
 		retryResult, rerr := implementer.RunAgent(ctx, anthropicKey, modelName,
-			repoDir, retryPlan, maxIter, implMaxCost)
+			repoDir, retryPlan, maxIter, retryBudget)
 		if rerr != nil {
 			writeCodeReviewArtifact(artifactDir, verdict, true)
 			log.Fatalf("implementer retry failed: %v", rerr)
@@ -283,8 +318,12 @@ func main() {
 			os.Exit(1)
 		}
 
-		// Re-review after the retry.
-		verdict, err = codereviewer.Review(ctx, geminiKey, repoDir, fullIssue, plan, dossier)
+		// Re-review after the retry. Pass retryPlan (not the original
+		// plan) so the semantic reviewer can see the specific feedback
+		// the retry was asked to address and verify it was applied —
+		// otherwise a retry could be approved even if it ignored every
+		// requested fix.
+		verdict, err = codereviewer.Review(ctx, geminiKey, repoDir, fullIssue, retryPlan, dossier)
 		if err != nil {
 			// Write a partial verdict so operators can diagnose why the
 			// pipeline halted after the retry was already consumed.
