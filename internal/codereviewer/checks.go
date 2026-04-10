@@ -18,6 +18,38 @@ const checkTimeout = 2 * time.Minute
 // build logs can't blow up the LLM prompt or run-summary artifact.
 const maxCheckOutput = 16 * 1024
 
+// cappedBuffer is an io.Writer that accumulates up to cap bytes and
+// silently drops writes past the cap while continuing to return success
+// from Write. This bounds the memory footprint of runGo's stdout/stderr
+// capture — without it, a pathological `go build` error flood could
+// buffer hundreds of KiB before the post-run truncation kicked in.
+//
+// Write returns len(p), nil even when bytes are dropped so that the
+// exec.Cmd io.Copy loop does not fail with io.ErrShortWrite.
+type cappedBuffer struct {
+	buf       bytes.Buffer
+	cap       int
+	truncated bool
+}
+
+func (c *cappedBuffer) Write(p []byte) (int, error) {
+	remaining := c.cap - c.buf.Len()
+	if remaining <= 0 {
+		c.truncated = true
+		return len(p), nil
+	}
+	if len(p) <= remaining {
+		return c.buf.Write(p)
+	}
+	c.buf.Write(p[:remaining])
+	c.truncated = true
+	return len(p), nil
+}
+
+func (c *cappedBuffer) String() string  { return c.buf.String() }
+func (c *cappedBuffer) Len() int        { return c.buf.Len() }
+func (c *cappedBuffer) Truncated() bool { return c.truncated }
+
 // runGo executes `go <sub> ./...` in repoDir with a bounded environment
 // and timeout. The minimal env mirrors internal/implementer/tools.go:275-281
 // to prevent a compromised target repo from exfiltrating API keys.
@@ -35,9 +67,13 @@ func runGo(ctx context.Context, repoDir, sub string) (*CheckResult, error) {
 		"TMPDIR=" + os.TempDir(),
 	}
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	// Cap each stream at maxCheckOutput so memory stays bounded during
+	// capture, not just after the fact. Combined post-run output still
+	// gets truncated as a safety net below.
+	stdout := &cappedBuffer{cap: maxCheckOutput}
+	stderr := &cappedBuffer{cap: maxCheckOutput}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 
 	runErr := cmd.Run()
 
@@ -64,8 +100,16 @@ func runGo(ctx context.Context, repoDir, sub string) (*CheckResult, error) {
 		}
 		output += stderr.String()
 	}
+	// Truncation signal comes from two sources: a per-stream cap hit
+	// during capture (stdout/stderr.Truncated) or the combined output
+	// exceeding the cap after concatenation. Either way, cap the
+	// combined output and append a single marker.
+	wasTruncated := stdout.Truncated() || stderr.Truncated() || len(output) > maxCheckOutput
 	if len(output) > maxCheckOutput {
-		output = output[:maxCheckOutput] + "\n... (truncated)"
+		output = output[:maxCheckOutput]
+	}
+	if wasTruncated {
+		output += "\n... (truncated)"
 	}
 
 	return &CheckResult{
