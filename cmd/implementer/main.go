@@ -232,7 +232,13 @@ func main() {
 	log.Printf("Code review verdict: approved=%v category=%q summary=%s",
 		verdict.Approved, verdict.Category, verdict.Summary)
 
+	// reviewRetried records whether the retry path was consumed so the
+	// final artifact write reports it accurately — even on the path
+	// where the retry succeeded and the second review approved.
+	reviewRetried := false
+
 	if !verdict.Approved {
+		reviewRetried = true
 		log.Printf("Code review rejected: %s", verdict.Feedback)
 		log.Printf("Retrying implementer with reviewer feedback...")
 
@@ -260,6 +266,13 @@ func main() {
 		result.CacheReadTokens += retryResult.CacheReadTokens
 		if retryResult.BudgetExceeded {
 			result.BudgetExceeded = true
+		}
+
+		// Refresh run-summary.json with the merged totals so top-level
+		// iterations / token counts / estimated_cost_usd reflect the
+		// retry, not the stale first-run values written at L188.
+		if artifactDir != "" {
+			writeRunArtifacts(artifactDir, issue, result, modelName, plan)
 		}
 
 		if result.BudgetExceeded {
@@ -293,9 +306,11 @@ func main() {
 		log.Printf("Code review approved after retry")
 	}
 
-	// Record the final (approved) verdict. Must happen before step 10
-	// so the artifact reflects review state even if PR upsert fails.
-	writeCodeReviewArtifact(artifactDir, verdict, false)
+	// Record the final verdict. Must happen before step 10 so the
+	// artifact reflects review state even if PR upsert fails.
+	// reviewRetried preserves the retry signal on the
+	// successful-after-retry path.
+	writeCodeReviewArtifact(artifactDir, verdict, reviewRetried)
 
 	// 10. Create or update branch and draft PR (handles collisions)
 	branch := fmt.Sprintf("agent/fix-%d", issue.Number)
@@ -636,13 +651,26 @@ func writeCodeReviewArtifact(dir string, verdict *codereviewer.Verdict, retried 
 		log.Printf("Warning: failed to parse run-summary.json: %v", err)
 		return
 	}
+	// Derive build_passed / vet_passed from category by explicitly
+	// enumerating the success cases rather than subtracting failure
+	// categories. This keeps unknown categories (e.g. reviewer_error)
+	// conservatively false instead of silently reporting both gates
+	// as passed, and makes the semantics obvious at a glance:
+	//
+	//	""         — build + vet + semantic all passed
+	//	"vet"      — build passed, vet failed, semantic not run
+	//	"semantic" — build + vet passed, semantic rejected
+	//	"build"    — build failed, vet not run, semantic not run
+	//	other      — runner/reviewer error; stage state unknown
+	buildPassed := verdict.Category == "" || verdict.Category == "vet" || verdict.Category == "semantic"
+	vetPassed := verdict.Category == "" || verdict.Category == "semantic"
 	summary["code_review"] = map[string]any{
 		"approved":        verdict.Approved,
 		"category":        verdict.Category,
 		"summary":         verdict.Summary,
 		"retried":         retried,
-		"build_passed":    verdict.Category != "build",
-		"vet_passed":      verdict.Category != "build" && verdict.Category != "vet",
+		"build_passed":    buildPassed,
+		"vet_passed":      vetPassed,
 		"semantic_result": verdict.SemanticResult,
 		"input_tokens":    verdict.InputTokens,
 		"output_tokens":   verdict.OutputTokens,
