@@ -1,6 +1,8 @@
 package codereviewer
 
 import (
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -108,4 +110,119 @@ func TestFormatLintFeedback(t *testing.T) {
 	if got != want {
 		t.Errorf("formatLintFeedback mismatch:\n--- want ---\n%s\n--- got ---\n%s", want, got)
 	}
+}
+
+func TestDetectLinter(t *testing.T) {
+	// Stub lookPathFn for the whole test so we don't depend on the host
+	// environment having (or not having) golangci-lint installed.
+	t.Cleanup(func() { lookPathFn = exec.LookPath })
+
+	t.Run("makefile with lint target wins", func(t *testing.T) {
+		dir := t.TempDir()
+		mustWrite(t, filepath.Join(dir, "Makefile"), "build:\n\tgo build ./...\n\nlint:\n\tgolangci-lint run\n")
+		lookPathFn = func(string) (string, error) { return "", exec.ErrNotFound }
+
+		cfg, err := detectLinter(dir)
+		if err != nil {
+			t.Fatalf("detectLinter error: %v", err)
+		}
+		if cfg == nil || cfg.Mode != "make" {
+			t.Errorf("expected Mode=make, got %+v", cfg)
+		}
+	})
+
+	t.Run("makefile without lint target falls through", func(t *testing.T) {
+		dir := t.TempDir()
+		mustWrite(t, filepath.Join(dir, "Makefile"), "build:\n\tgo build ./...\n")
+		lookPathFn = func(string) (string, error) { return "", exec.ErrNotFound }
+
+		cfg, err := detectLinter(dir)
+		if err != nil {
+			t.Fatalf("detectLinter error: %v", err)
+		}
+		if cfg != nil {
+			t.Errorf("expected nil config, got %+v", cfg)
+		}
+	})
+
+	t.Run("golangci-lint with config on path", func(t *testing.T) {
+		dir := t.TempDir()
+		mustWrite(t, filepath.Join(dir, ".golangci.yml"), "run:\n  timeout: 5m\n")
+		lookPathFn = func(string) (string, error) { return "/usr/local/bin/golangci-lint", nil }
+
+		cfg, err := detectLinter(dir)
+		if err != nil {
+			t.Fatalf("detectLinter error: %v", err)
+		}
+		if cfg == nil || cfg.Mode != "golangci-lint" {
+			t.Errorf("expected Mode=golangci-lint, got %+v", cfg)
+		}
+		if !strings.HasSuffix(cfg.ConfigPath, ".golangci.yml") {
+			t.Errorf("expected ConfigPath to end with .golangci.yml, got %q", cfg.ConfigPath)
+		}
+	})
+
+	t.Run("golangci config but no binary returns nil", func(t *testing.T) {
+		dir := t.TempDir()
+		mustWrite(t, filepath.Join(dir, ".golangci.yml"), "run:\n  timeout: 5m\n")
+		lookPathFn = func(string) (string, error) { return "", exec.ErrNotFound }
+
+		cfg, err := detectLinter(dir)
+		if err != nil {
+			t.Fatalf("detectLinter error: %v", err)
+		}
+		if cfg != nil {
+			t.Errorf("expected nil, got %+v", cfg)
+		}
+	})
+
+	t.Run("empty repo returns nil", func(t *testing.T) {
+		dir := t.TempDir()
+		lookPathFn = func(string) (string, error) { return "", exec.ErrNotFound }
+
+		cfg, err := detectLinter(dir)
+		if err != nil {
+			t.Fatalf("detectLinter error: %v", err)
+		}
+		if cfg != nil {
+			t.Errorf("expected nil, got %+v", cfg)
+		}
+	})
+
+	t.Run("AGENT_LINT=off short circuits", func(t *testing.T) {
+		dir := t.TempDir()
+		mustWrite(t, filepath.Join(dir, "Makefile"), "lint:\n\techo ok\n")
+		mustWrite(t, filepath.Join(dir, ".golangci.yml"), "run:\n  timeout: 5m\n")
+		lookPathFn = func(string) (string, error) { return "/usr/local/bin/golangci-lint", nil }
+		t.Setenv("AGENT_LINT", "off")
+
+		cfg, err := detectLinter(dir)
+		if err != nil {
+			t.Fatalf("detectLinter error: %v", err)
+		}
+		if cfg != nil {
+			t.Errorf("expected nil (AGENT_LINT=off), got %+v", cfg)
+		}
+	})
+
+	t.Run("makefile larger than 64 KiB only scans first 64 KiB", func(t *testing.T) {
+		dir := t.TempDir()
+		var sb strings.Builder
+		sb.WriteString("build:\n\tgo build\n\n")
+		// Pad with a harmless 'other' target until we push past 64 KiB,
+		// then append a lint target that lives beyond the cap.
+		padding := strings.Repeat("other:\n\techo nope\n\n", 5000) // ~95 KiB
+		sb.WriteString(padding)
+		sb.WriteString("lint:\n\techo beyond cap\n")
+		mustWrite(t, filepath.Join(dir, "Makefile"), sb.String())
+		lookPathFn = func(string) (string, error) { return "", exec.ErrNotFound }
+
+		cfg, err := detectLinter(dir)
+		if err != nil {
+			t.Fatalf("detectLinter error: %v", err)
+		}
+		if cfg != nil {
+			t.Errorf("expected nil (lint target beyond 64 KiB cap), got %+v", cfg)
+		}
+	})
 }

@@ -1,6 +1,11 @@
 package codereviewer
 
 import (
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -112,4 +117,72 @@ func formatLintFeedback(errs []lintError) string {
 	}
 	b.WriteString("\nRe-run the build and try again.")
 	return b.String()
+}
+
+// lintConfig describes which linter RunLint should invoke.
+type lintConfig struct {
+	Mode       string // "make" or "golangci-lint"
+	ConfigPath string // empty for make mode; path to .golangci.* for golangci-lint mode
+}
+
+// lintMakefileScanCap bounds how many bytes of a target repo's Makefile
+// we inspect when probing for a lint target. 64 KiB is vastly larger
+// than any real Makefile and small enough that a pathological fixture
+// cannot blow up memory or CPU.
+const lintMakefileScanCap = 64 * 1024
+
+// lintMakeTargetRE matches a line like `lint:` or `lint: deps` at the
+// beginning of a line. \n anchors so we do not match `prelint:` etc.
+var lintMakeTargetRE = regexp.MustCompile(`(?m)^lint:`)
+
+// lookPathFn is exec.LookPath by default, exposed as a package var so
+// tests can stub binary discovery without touching the host PATH.
+var lookPathFn = exec.LookPath
+
+// detectLinter probes repoDir for the linter RunLint should use.
+// Returns (nil, nil) when no lint workflow is available — callers
+// should treat this as a silent no-op, not an error.
+//
+// Order of precedence:
+//  1. AGENT_LINT=off env var short-circuits to nil (operator kill switch)
+//  2. Makefile with a `^lint:` target → {Mode: "make"}
+//  3. golangci-lint binary on PATH AND a .golangci.{yml,yaml,toml}
+//     config in repoDir → {Mode: "golangci-lint", ConfigPath: ...}
+//  4. Otherwise → nil
+func detectLinter(repoDir string) (*lintConfig, error) {
+	if strings.EqualFold(os.Getenv("AGENT_LINT"), "off") {
+		return nil, nil
+	}
+
+	// Makefile probe. Read bounded prefix to protect against pathological
+	// Makefiles (and for symmetry with the rest of the package, which
+	// caps all external input).
+	if f, err := os.Open(filepath.Join(repoDir, "Makefile")); err == nil {
+		buf := make([]byte, lintMakefileScanCap)
+		n, rerr := io.ReadFull(f, buf)
+		f.Close()
+		if rerr != nil && rerr != io.EOF && rerr != io.ErrUnexpectedEOF {
+			return nil, fmt.Errorf("reading Makefile: %w", rerr)
+		}
+		if lintMakeTargetRE.Match(buf[:n]) {
+			return &lintConfig{Mode: "make"}, nil
+		}
+	}
+
+	// golangci-lint probe. Requires both the binary AND a config file —
+	// running golangci-lint without a config in a repo that hasn't opted
+	// into it would be presumptuous and noisy.
+	for _, name := range []string{".golangci.yml", ".golangci.yaml", ".golangci.toml"} {
+		cfgPath := filepath.Join(repoDir, name)
+		if _, err := os.Stat(cfgPath); err == nil {
+			if _, err := lookPathFn("golangci-lint"); err == nil {
+				return &lintConfig{Mode: "golangci-lint", ConfigPath: cfgPath}, nil
+			}
+			// Config found but binary missing — fall through to nil so
+			// the pipeline skips lint rather than halting.
+			break
+		}
+	}
+
+	return nil, nil
 }
