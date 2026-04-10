@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -231,6 +232,104 @@ func TestBuildReviewPrompt(t *testing.T) {
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("prompt should contain %q", want)
+		}
+	}
+}
+
+// TestReview_Integration runs Review end-to-end against a live
+// Gemini Flash model. Skipped under `-short` and when GOOGLE_API_KEY
+// (or GEMINI_API_KEY) is not set.
+//
+// Run manually with:
+//
+//	GOOGLE_API_KEY=... go test ./internal/codereviewer -run Integration -v
+func TestReview_Integration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test under -short")
+	}
+	geminiKey := os.Getenv("GOOGLE_API_KEY")
+	if geminiKey == "" {
+		geminiKey = os.Getenv("GEMINI_API_KEY")
+	}
+	if geminiKey == "" {
+		t.Skip("GOOGLE_API_KEY / GEMINI_API_KEY not set")
+	}
+
+	// Initialize a git repo so collectDiff can run.
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "go.mod"), "module testmod\n\ngo 1.21\n")
+	mustWrite(t, filepath.Join(dir, "main.go"), "package main\n\nfunc main() {}\n")
+
+	gitInit(t, dir)
+	gitCommitAll(t, dir, "initial")
+
+	// Introduce a deliberately stubbed change.
+	mustWrite(t, filepath.Join(dir, "main.go"), `package main
+
+func main() {
+	// TODO: implement the actual fix described in the plan
+	_ = 1
+}
+`)
+
+	issue := &github.Issue{
+		Number: 42,
+		Title:  "Add error handling to main",
+		Body:   "main() should validate inputs and return a non-zero exit code on error.",
+	}
+	plan := &planner.ImplementationPlan{
+		Markdown: "## Task\n\nAdd full error handling to main.go. Validate arguments and return non-zero on failure.",
+	}
+	dossier := &archivist.Dossier{
+		Summary:  "main.go has no error handling today",
+		Approach: "Wrap the body in a run() helper returning error",
+	}
+
+	verdict, err := Review(context.Background(), geminiKey, dir, issue, plan, dossier)
+	if err != nil {
+		t.Fatalf("Review error: %v", err)
+	}
+	if verdict.Approved {
+		t.Errorf("expected rejection (diff contains stub + TODO), got approved. Summary: %s", verdict.Summary)
+	}
+	if verdict.Category != "semantic" {
+		t.Errorf("expected Category=semantic, got %q", verdict.Category)
+	}
+	if verdict.InputTokens == 0 || verdict.OutputTokens == 0 {
+		t.Errorf("expected non-zero token counts, got in=%d out=%d", verdict.InputTokens, verdict.OutputTokens)
+	}
+	if verdict.CostUSD <= 0 {
+		t.Errorf("expected positive CostUSD, got %f", verdict.CostUSD)
+	}
+}
+
+// gitInit and gitCommitAll are test helpers that wrap `git init` / add / commit
+// so the integration test has a HEAD to diff against. Kept in the _test
+// file because the production code never needs to init a repo.
+func gitInit(t *testing.T, dir string) {
+	t.Helper()
+	for _, args := range [][]string{
+		{"git", "init", "--quiet"},
+		{"git", "-c", "user.email=t@t.test", "-c", "user.name=t", "config", "commit.gpgsign", "false"},
+	} {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %v\n%s", args, err, out)
+		}
+	}
+}
+
+func gitCommitAll(t *testing.T, dir, msg string) {
+	t.Helper()
+	for _, args := range [][]string{
+		{"git", "add", "-A"},
+		{"git", "-c", "user.email=t@t.test", "-c", "user.name=t", "commit", "-m", msg, "--quiet"},
+	} {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %v\n%s", args, err, out)
 		}
 	}
 }
