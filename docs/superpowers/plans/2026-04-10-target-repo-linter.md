@@ -1,5 +1,15 @@
 # Target-Repo Linter Implementation Plan
 
+> **⚠️ HISTORICAL PLAN — do not re-execute verbatim.** This document captures the plan as it looked at plan-time (2026-04-10, before any code was written). The shipped implementation diverged during execution and subsequent review rounds — notably:
+>
+> - **Task 5 `RunLint`** was refactored in commit `ea8e9ba` to call the shared `runBoundedCmd` helper in `checks.go` instead of building its own `exec.Cmd` with inline env/buffer/truncation logic. The code block in Task 5 Step 3 shows the pre-refactor shape.
+> - **Task 7 `Review()` wiring** was amended in commits `e1940de` (added `repoDir` to `filterLintErrors` for absolute-path normalization) and `c665d76` (added `truncated` return and the fail-closed path for unparseable/capped output, plus a new `formatLintRawFeedback` renderer). The decision-logic pseudocode in Task 7 Step 3 shows only the original kept/dropped branches.
+> - **Task 1** claimed no changes to `cmd/implementer/main.go`; in `e1940de` the `writeCodeReviewArtifact` function was updated to add the lint fields to its hand-curated JSON map and to teach `buildPassed`/`vetPassed` about `Category="lint"`.
+> - **Task 6 `collectChangedFiles`** gained a robust porcelain-v1 parser in commit `02c095e` that handles filenames with spaces and renames (`strings.Fields` would have silently dropped them).
+> - **Task 4 Makefile probe** tightened the regex to `(?m)^lint::?(?:\s|$)` and learned GNU make's file precedence (`GNUmakefile` > `makefile` > `Makefile`) in commit `02c095e`.
+>
+> For the current truth, read the code under `internal/codereviewer/` and the spec at `docs/superpowers/specs/2026-04-10-target-repo-linter-design.md` (kept in sync as the implementation evolved). This plan remains useful as a record of how the feature was broken down, what the original design intent was, and which tasks were bite-sized enough to dispatch to subagents — but the code snippets should be read as plan-time intent, not authoritative.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a target-repo linter as a new deterministic check inside `internal/codereviewer`, sharing the existing one-retry loop and feeding changed-file-filtered feedback back to the implementer on failure.
