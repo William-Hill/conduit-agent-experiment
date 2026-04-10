@@ -89,3 +89,23 @@ func TestFilterLintErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestFormatLintFeedback(t *testing.T) {
+	errs := []lintError{
+		{File: "internal/foo/bar.go", Line: 42, Col: 5, Message: "ineffectual assignment to err (ineffassign)"},
+		{File: "internal/foo/bar.go", Line: 87, Col: 2, Message: "declared and not used: tmp (typecheck)"},
+		{File: "cmd/implementer/main.go", Line: 301, Col: 12, Message: "exported function Frob should have comment (golint)"},
+	}
+
+	want := "## Lint Errors\n\n" +
+		"The following lint violations were introduced by your changes. Fix each one:\n\n" +
+		"- internal/foo/bar.go:42:5: ineffectual assignment to err (ineffassign)\n" +
+		"- internal/foo/bar.go:87:2: declared and not used: tmp (typecheck)\n" +
+		"- cmd/implementer/main.go:301:12: exported function Frob should have comment (golint)\n\n" +
+		"Re-run the build and try again."
+
+	got := formatLintFeedback(errs)
+	if got != want {
+		t.Errorf("formatLintFeedback mismatch:\n--- want ---\n%s\n--- got ---\n%s", want, got)
+	}
+}

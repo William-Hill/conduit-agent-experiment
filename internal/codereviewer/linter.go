@@ -88,3 +88,28 @@ func filterLintErrors(output string, changedFiles []string) ([]lintError, int) {
 func normalizeLintPath(p string) string {
 	return strings.TrimPrefix(p, "./")
 }
+
+// formatLintFeedback renders a slice of lintError records into the
+// markdown body that Review() stores in verdict.Feedback on a lint
+// rejection. cmd/implementer/main.go appends verdict.Feedback to the
+// retry plan unchanged, so the format here is what the implementer
+// actually reads on the retry pass.
+//
+// Col == 0 is rendered without the trailing ":0" so line-only linter
+// output reads naturally. (The current v1 caller always passes col > 0
+// from the canonical golangci-lint format, but the fallback keeps the
+// output clean if a future linter omits columns.)
+func formatLintFeedback(errs []lintError) string {
+	var b strings.Builder
+	b.WriteString("## Lint Errors\n\n")
+	b.WriteString("The following lint violations were introduced by your changes. Fix each one:\n\n")
+	for _, e := range errs {
+		if e.Col > 0 {
+			b.WriteString("- " + e.File + ":" + strconv.Itoa(e.Line) + ":" + strconv.Itoa(e.Col) + ": " + e.Message + "\n")
+		} else {
+			b.WriteString("- " + e.File + ":" + strconv.Itoa(e.Line) + ": " + e.Message + "\n")
+		}
+	}
+	b.WriteString("\nRe-run the build and try again.")
+	return b.String()
+}
