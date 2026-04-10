@@ -56,3 +56,36 @@ func TestRunBuild_Fails(t *testing.T) {
 		t.Errorf("expected output to contain 'undefined', got: %s", res.Output)
 	}
 }
+
+func TestRunVet_CatchesFormatMismatch(t *testing.T) {
+	// fmt.Printf with wrong format verb — go build passes, go vet fails.
+	content := `package main
+
+import "fmt"
+
+func main() {
+	fmt.Printf("%d\n", "not a number")
+}
+`
+	dir := writeTestModule(t, content)
+
+	// Sanity: build should pass (vet is what catches this).
+	build, err := RunBuild(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("RunBuild error: %v", err)
+	}
+	if !build.Passed {
+		t.Fatalf("expected build to pass, got: %s", build.Output)
+	}
+
+	vet, err := RunVet(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("RunVet error: %v", err)
+	}
+	if vet.Passed {
+		t.Errorf("expected vet to fail on %%d vs string mismatch. Output: %s", vet.Output)
+	}
+	if vet.ExitCode == 0 {
+		t.Errorf("expected non-zero ExitCode")
+	}
+}

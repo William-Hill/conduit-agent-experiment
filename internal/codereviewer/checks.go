@@ -79,3 +79,8 @@ func runGo(ctx context.Context, repoDir, sub string) (*CheckResult, error) {
 func RunBuild(ctx context.Context, repoDir string) (*CheckResult, error) {
 	return runGo(ctx, repoDir, "build")
 }
+
+// RunVet executes `go vet ./...` in repoDir.
+func RunVet(ctx context.Context, repoDir string) (*CheckResult, error) {
+	return runGo(ctx, repoDir, "vet")
+}
