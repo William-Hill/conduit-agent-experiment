@@ -105,10 +105,17 @@ func TestRunBuild_Timeout(t *testing.T) {
 	}
 }
 
-func TestRunBuild_OutputTruncation(t *testing.T) {
-	// Produce enough vet errors to exceed the 16 KiB cap.
-	// fmt.Printf with wrong format verb generates many errors (~80 bytes each).
-	// Using RunVet with 5000 lines of the same error → ~450 KiB output.
+func TestRunVet_OutputTruncation(t *testing.T) {
+	// Exercises the shared runGo truncation path via RunVet.
+	//
+	// We use RunVet rather than RunBuild because the Go compiler caps
+	// error reporting after ~10 errors, making it impractical to push a
+	// build-failure output past the 16 KiB maxCheckOutput threshold. vet
+	// does not have the same cap, so 5000 fmt.Printf format-verb
+	// mismatches reliably produce ~450 KiB of output — plenty to
+	// verify truncation. Both RunBuild and RunVet delegate to runGo,
+	// so the truncation code path exercised here is the same one
+	// RunBuild would hit if its output were large enough.
 	var sb strings.Builder
 	sb.WriteString("package main\n\nimport \"fmt\"\n\nfunc main() {\n")
 	for i := 0; i < 5000; i++ {
