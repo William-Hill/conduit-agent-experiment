@@ -65,6 +65,16 @@ func runGo(ctx context.Context, repoDir, sub string) (*CheckResult, error) {
 		"GOPATH=" + os.Getenv("GOPATH"),
 		"GOROOT=" + os.Getenv("GOROOT"),
 		"TMPDIR=" + os.TempDir(),
+		// -mod=readonly makes `go build`/`go vet` fail instead of
+		// silently mutating go.mod/go.sum when a dependency is
+		// missing. Without this, the reviewer could dirty the working
+		// tree it's supposed to validate and push the unrelated
+		// go.mod churn as part of the PR.
+		"GOFLAGS=-mod=readonly",
+		// GOWORK=off disables workspace mode so the reviewer's
+		// validation stays deterministic regardless of the CI
+		// environment's workspace config.
+		"GOWORK=off",
 	}
 
 	// Cap each stream at maxCheckOutput so memory stays bounded during
