@@ -8,6 +8,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/archivist"
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/github"
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/planner"
 )
 
 // writeTestModule creates a temp dir with go.mod and main.go, returning
@@ -137,5 +141,41 @@ func TestRunVet_OutputTruncation(t *testing.T) {
 	}
 	if !strings.Contains(res.Output, "truncated") {
 		t.Error("expected output to contain truncation marker")
+	}
+}
+
+func TestBuildReviewPrompt(t *testing.T) {
+	issue := &github.Issue{
+		Number: 42,
+		Title:  "Fix the bug",
+		Body:   "The thing is broken",
+	}
+	plan := &planner.ImplementationPlan{
+		Markdown: "# Plan\n\nWrite code to fix main.go",
+	}
+	dossier := &archivist.Dossier{
+		Summary:  "Bug is in main.go",
+		Approach: "Fix the nil check",
+		Files: []archivist.FileEntry{
+			{Path: "main.go", Reason: "has the bug"},
+		},
+	}
+	diff := "--- a/main.go\n+++ b/main.go\n@@ -1 +1 @@\n-old\n+new\n"
+	files := []string{"main.go"}
+
+	prompt := buildReviewPrompt(issue, plan, dossier, diff, files)
+
+	for _, want := range []string{
+		"Fix the bug",
+		"The thing is broken",
+		"Write code to fix main.go",
+		"Bug is in main.go",
+		"Fix the nil check",
+		"main.go",
+		"+new",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt should contain %q", want)
+		}
 	}
 }
