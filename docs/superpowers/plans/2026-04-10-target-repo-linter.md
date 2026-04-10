@@ -23,7 +23,9 @@
 - `internal/codereviewer/reviewer.go` — extract `collectChangedFiles` helper, wire `RunLint` into `Review()`, add `runLintFn` package var for stubbing
 - `internal/codereviewer/reviewer_test.go` — add 4 integration test cases exercising the new wiring
 
-No changes to `cmd/implementer/main.go` — the retry block already consumes `verdict.Feedback` unchanged.
+No changes to `cmd/implementer/main.go`'s retry block — it already consumes `verdict.Feedback` unchanged.
+
+> **Retrospective note:** during the final review pass, `cmd/implementer/main.go` *was* modified after all — `writeCodeReviewArtifact` turned out to build a hand-curated `map[string]any` rather than JSON-serialize the `Verdict` struct, so the new lint fields had to be added to the map explicitly, and `buildPassed` / `vetPassed` had to learn the new `"lint"` category. See commit `e1940de`. The retry block itself still wasn't touched.
 
 ---
 

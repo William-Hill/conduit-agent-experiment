@@ -33,9 +33,10 @@ Flow inside `Review()`:
 
 1. `RunBuild` — unchanged
 2. `RunVet` — unchanged
-3. **`RunLint` — new**
-4. `collectDiff` — unchanged (diff collection for semantic review)
-5. Gemini semantic review — unchanged
+3. **`collectChangedFiles` — new** (hoisted from the old `collectDiff` so both lint and the semantic reviewer see the same changed-file set)
+4. **`RunLint` — new**
+5. `collectDiff` — refactored to diff-only; no longer returns the changed-file list
+6. Gemini semantic review — unchanged
 
 If `RunLint` reports **actionable** errors (see *Feedback filtering* below), `Review()` returns `verdict.Approved = false` with `verdict.Category = "lint"` and the retry block at `cmd/implementer/main.go:240` handles the rest of the lifecycle unchanged. One retry covers lint and semantic review together — no new retry slots, no new budget arithmetic.
 
@@ -96,13 +97,21 @@ type lintError struct {
 
 // filterLintErrors parses lint output and returns only errors whose
 // file path falls within changedFiles. The second return is the count
-// of parsed-but-dropped errors (for telemetry/logging).
-func filterLintErrors(output string, changedFiles []string) (kept []lintError, dropped int)
+// of parsed-but-dropped errors (for telemetry/logging). The third
+// return is true when parsing stopped at lintParseCap — callers must
+// treat a truncated parse with no kept errors as UNSAFE for advisory
+// pass, because changed-file errors may exist beyond the cap.
+//
+// repoDir lets the parser strip an absolute-path prefix before the
+// changedFiles lookup, so a linter invoked with `$(PWD)` in a Makefile
+// still matches a relative changedFiles entry. Pass "" to only trim a
+// leading "./".
+func filterLintErrors(output, repoDir string, changedFiles []string) (kept []lintError, dropped int, truncated bool)
 ```
 
 ### Parser
 
-Line-oriented regex: `^(?P<file>[^:]+):(?P<line>\d+):(?:(?P<col>\d+):)?\s*(?P<msg>.+)$`. This matches both `golangci-lint`'s `line-number` format and the common `file:line:col: message` format most Go linters emit (including anything `make lint` is likely to wrap). Lines that don't match are ignored — they were never parsed as errors, so they aren't counted as dropped. Hard cap: stop after parsing 500 error lines to bound cost on pathological output.
+Line-oriented regex: `^(?P<file>[^:]+):(?P<line>\d+):(?:(?P<col>\d+):)?\s*(?P<msg>.+)$`. It matches both `golangci-lint`'s `line-number` format and the common `file:line:col: message` format most Go linters emit (including anything `make lint` is likely to wrap). Non-matching lines are ignored — they were never parsed as errors, so they aren't counted as dropped. Hard cap: stop after parsing 500 error lines to bound cost on pathological output; the caller is expected to surface the cap hit via the `truncated` return and fail closed when it fires with zero kept errors.
 
 ### Path matching
 
@@ -110,35 +119,54 @@ Line-oriented regex: `^(?P<file>[^:]+):(?P<line>\d+):(?:(?P<col>\d+):)?\s*(?P<ms
 
 ### Decision logic inside `Review()`
 
-```
-if lintResult.Passed:
+```go
+if lintResult.Passed {
     verdict.LintOutput = lintResult.Output
-    proceed to semantic review
-
-else:
-    kept, dropped := filterLintErrors(lintResult.Output, changedFiles)
+    // proceed to semantic review
+} else {
+    kept, dropped, parserTruncated := filterLintErrors(lintResult.Output, repoDir, changedFiles)
     verdict.LintOutput = lintResult.Output
     verdict.LintErrorsKept = len(kept)
     verdict.LintErrorsDropped = dropped
 
-    if len(kept) == 0:
-        // Advisory pass — pre-existing debt, not our fault
-        log.Printf("lint failed but 0 errors in changed files (%d dropped as pre-existing); treating as advisory pass", dropped)
-        proceed to semantic review
-
-    else:
+    if len(kept) > 0 {
+        // Real agent-introduced errors — reject with formatted feedback.
         verdict.Approved = false
         verdict.Category = "lint"
         verdict.Summary = fmt.Sprintf("%d lint error(s) in changed files", len(kept))
         verdict.Feedback = formatLintFeedback(kept)
         return verdict
+    }
+
+    // Fail closed when we cannot trust the advisory-pass conclusion:
+    //   - dropped == 0 means zero parseable lines (unparseable format,
+    //     Makefile tooling error, ANSI codes, unknown linter output)
+    //   - parserTruncated means the parser stopped at lintParseCap and
+    //     we may have missed changed-file errors past the cap
+    //   - the "... (truncated)" sentinel means runBoundedCmd capped
+    //     the raw output at 16 KiB and we may have missed errors past
+    //     the cap
+    outputTruncated := strings.Contains(lintResult.Output, "... (truncated)")
+    if dropped == 0 || parserTruncated || outputTruncated {
+        verdict.Approved = false
+        verdict.Category = "lint"
+        verdict.Summary = "lint failed with unclassifiable output"
+        verdict.Feedback = formatLintRawFeedback(lintResult.Output)
+        return verdict
+    }
+
+    // Safe advisory pass — parser read the full output, at least one
+    // error was parsed, and none of them touched changed files.
+    log.Printf("Lint advisory pass: %d error(s) reported but all in unchanged files (pre-existing debt)", dropped)
+    // proceed to semantic review
+}
 ```
 
 ### Feedback format
 
 `formatLintFeedback(errs []lintError) string` returns:
 
-```
+```markdown
 ## Lint Errors
 
 The following lint violations were introduced by your changes. Fix each one:
@@ -149,6 +177,8 @@ The following lint violations were introduced by your changes. Fix each one:
 
 Re-run the build and try again.
 ```
+
+The fail-closed path uses a sibling `formatLintRawFeedback(output string) string` that wraps the raw lint output in a `## Lint Failure` block so the implementer can diagnose unparseable/truncated runs directly.
 
 This string flows into `verdict.Feedback`, which the existing retry block at `cmd/implementer/main.go:245` appends to the retry plan with no changes.
 
