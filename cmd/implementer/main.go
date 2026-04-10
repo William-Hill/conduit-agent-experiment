@@ -273,7 +273,14 @@ func main() {
 		// Re-review after the retry.
 		verdict, err = codereviewer.Review(ctx, geminiKey, repoDir, fullIssue, plan, dossier)
 		if err != nil {
-			writeCodeReviewArtifact(artifactDir, verdict, true)
+			// Write a partial verdict so operators can diagnose why the
+			// pipeline halted after the retry was already consumed.
+			// verdict is nil when Review errors, so construct one here.
+			writeCodeReviewArtifact(artifactDir, &codereviewer.Verdict{
+				Approved: false,
+				Category: "reviewer_error",
+				Summary:  fmt.Sprintf("code reviewer (retry) failed: %v", err),
+			}, true)
 			log.Fatalf("code reviewer (retry) failed: %v", err)
 		}
 		log.Printf("Retry code review verdict: approved=%v category=%q summary=%s",
