@@ -3,6 +3,7 @@ package codereviewer
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -10,7 +11,9 @@ import (
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/archivist"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/cost"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/github"
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/llmutil"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/planner"
+	"google.golang.org/genai"
 )
 
 const codeReviewSystemPrompt = `You are a code review engineer. You receive a GitHub issue, a plan, a research dossier, and a git diff of an attempted implementation. The code already compiles (go build) and passes go vet.
@@ -65,11 +68,51 @@ type llmVerdict struct {
 	Feedback string `json:"feedback"`
 }
 
-// reviewSemantics is a package var so tests can replace it with a stub
-// if needed. Task 7 initializes it to the real Gemini Flash call. Until
-// then it is nil and the happy-path branch of Review errors cleanly;
-// the short-circuit tests in this task never reach that branch.
-var reviewSemantics func(ctx context.Context, apiKey, prompt string) (*llmVerdict, int, int, error)
+// reviewSemantics is a package var so tests can replace it with a stub.
+// Default is the real Gemini Flash call in callGeminiForReview.
+var reviewSemantics = callGeminiForReview
+
+// callGeminiForReview makes a single gemini-2.5-flash call with the
+// system prompt and user prompt, parses the JSON response, and returns
+// the verdict plus token usage.
+func callGeminiForReview(ctx context.Context, apiKey, prompt string) (*llmVerdict, int, int, error) {
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{APIKey: apiKey})
+	if err != nil {
+		return nil, 0, 0, fmt.Errorf("creating genai client: %w", err)
+	}
+
+	resp, err := client.Models.GenerateContent(ctx, geminiModel, genai.Text(prompt), &genai.GenerateContentConfig{
+		SystemInstruction: &genai.Content{Parts: []*genai.Part{
+			genai.NewPartFromText(codeReviewSystemPrompt),
+		}},
+		ResponseMIMEType: "application/json",
+	})
+	if err != nil {
+		return nil, 0, 0, fmt.Errorf("generating content: %w", err)
+	}
+	if len(resp.Candidates) == 0 || resp.Candidates[0].Content == nil {
+		return nil, 0, 0, fmt.Errorf("empty response from model")
+	}
+
+	var text string
+	for _, part := range resp.Candidates[0].Content.Parts {
+		if part.Text != "" {
+			text += part.Text
+		}
+	}
+
+	var out llmVerdict
+	if err := json.Unmarshal([]byte(llmutil.CleanJSON(text)), &out); err != nil {
+		return nil, 0, 0, fmt.Errorf("parsing JSON (%q): %w", text, err)
+	}
+
+	var inTok, outTok int
+	if resp.UsageMetadata != nil {
+		inTok = int(resp.UsageMetadata.PromptTokenCount)
+		outTok = int(resp.UsageMetadata.CandidatesTokenCount)
+	}
+	return &out, inTok, outTok, nil
+}
 
 // Review runs the deterministic and semantic gates against the current
 // working tree in repoDir. It does not mutate repo content (though
@@ -124,9 +167,6 @@ func Review(
 	}
 
 	// 4. Semantic LLM review.
-	if reviewSemantics == nil {
-		return nil, fmt.Errorf("semantic reviewer not configured (Task 7 not yet applied)")
-	}
 	prompt := buildReviewPrompt(issue, plan, dossier, diff, files)
 	llmResult, inTokens, outTokens, err := reviewSemantics(ctx, geminiKey, prompt)
 	if err != nil {
