@@ -334,6 +334,42 @@ func gitCommitAll(t *testing.T, dir, msg string) {
 	}
 }
 
+func TestCollectChangedFiles_FilenameWithSpaces(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "go.mod"), "module testmod\n\ngo 1.21\n")
+	mustWrite(t, filepath.Join(dir, "main.go"), "package main\n\nfunc main() {}\n")
+	gitInit(t, dir)
+	gitCommitAll(t, dir, "initial")
+
+	// Dirty edit on the existing file plus a new file whose name
+	// contains a space. Before the porcelain parser fix, Fields-based
+	// tokenization silently dropped the space-containing filename.
+	mustWrite(t, filepath.Join(dir, "main.go"), "package main\n\nfunc main() { _ = 1 }\n")
+	mustWrite(t, filepath.Join(dir, "some file.go"), "package main\n")
+
+	files, err := collectChangedFiles(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("collectChangedFiles error: %v", err)
+	}
+
+	wantMain := false
+	wantSpaced := false
+	for _, f := range files {
+		if f == "main.go" {
+			wantMain = true
+		}
+		if f == "some file.go" {
+			wantSpaced = true
+		}
+	}
+	if !wantMain {
+		t.Errorf("expected 'main.go' in %+v", files)
+	}
+	if !wantSpaced {
+		t.Errorf("expected 'some file.go' in %+v (porcelain parser drops filenames with spaces)", files)
+	}
+}
+
 // stubReviewSemantics is a helper that replaces reviewSemantics for the
 // duration of a test and restores it on cleanup. Returns a pointer to
 // the call counter so tests can assert whether the semantic call was

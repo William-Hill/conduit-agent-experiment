@@ -171,9 +171,12 @@ type lintConfig struct {
 // cannot blow up memory or CPU.
 const lintMakefileScanCap = 64 * 1024
 
-// lintMakeTargetRE matches a line like `lint:` or `lint: deps` at the
-// beginning of a line. \n anchors so we do not match `prelint:` etc.
-var lintMakeTargetRE = regexp.MustCompile(`(?m)^lint:`)
+// lintMakeTargetRE matches a `lint:` (or double-colon `lint::`) target
+// declaration at the beginning of a Makefile line. The trailing
+// `(?:\s|$)` requires whitespace or end-of-line after the colon(s) so
+// we do not mistake Make variable assignments like `lint:=value` for a
+// target. The multiline anchor prevents matching `prelint:` or similar.
+var lintMakeTargetRE = regexp.MustCompile(`(?m)^lint::?(?:\s|$)`)
 
 // lookPathFn is exec.LookPath by default, exposed as a package var so
 // tests can stub binary discovery without touching the host PATH.
@@ -194,19 +197,32 @@ func detectLinter(repoDir string) (*lintConfig, error) {
 		return nil, nil
 	}
 
-	// Makefile probe. Read bounded prefix to protect against pathological
-	// Makefiles (and for symmetry with the rest of the package, which
-	// caps all external input).
-	if f, err := os.Open(filepath.Join(repoDir, "Makefile")); err == nil {
+	// Makefile probe. Check the three standard names in GNU make's
+	// precedence order so we probe the same file `make lint` would
+	// actually run. Read a bounded prefix to protect against
+	// pathological Makefiles (and for symmetry with the rest of the
+	// package, which caps all external input). Stop after the first
+	// file that exists — even if it has no `lint:` target, we match
+	// make's default-file behavior by not falling through to a lower-
+	// precedence name.
+	for _, name := range []string{"GNUmakefile", "makefile", "Makefile"} {
+		f, err := os.Open(filepath.Join(repoDir, name))
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, fmt.Errorf("opening %s: %w", name, err)
+		}
 		buf := make([]byte, lintMakefileScanCap)
 		n, rerr := io.ReadFull(f, buf)
 		f.Close()
 		if rerr != nil && rerr != io.EOF && rerr != io.ErrUnexpectedEOF {
-			return nil, fmt.Errorf("reading Makefile: %w", rerr)
+			return nil, fmt.Errorf("reading %s: %w", name, rerr)
 		}
 		if lintMakeTargetRE.Match(buf[:n]) {
 			return &lintConfig{Mode: lintModeMake}, nil
 		}
+		break // mirror make's default-file selection — don't fall through
 	}
 
 	// golangci-lint probe. Requires both the binary AND a config file —

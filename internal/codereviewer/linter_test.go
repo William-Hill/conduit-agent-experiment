@@ -264,6 +264,89 @@ func TestDetectLinter(t *testing.T) {
 			t.Errorf("expected nil (lint target beyond 64 KiB cap), got %+v", cfg)
 		}
 	})
+
+	t.Run("variable assignment is rejected (not a lint target)", func(t *testing.T) {
+		dir := t.TempDir()
+		// `lint:=value` is a Make variable assignment, not a target.
+		// The old regex matched it as a target; the tightened regex
+		// must reject it.
+		mustWrite(t, filepath.Join(dir, "Makefile"), "lint:=golangci-lint run\n\nbuild:\n\tgo build ./...\n")
+		lookPathFn = func(string) (string, error) { return "", exec.ErrNotFound }
+
+		cfg, err := detectLinter(dir)
+		if err != nil {
+			t.Fatalf("detectLinter error: %v", err)
+		}
+		if cfg != nil {
+			t.Errorf("expected nil (lint:=value is a variable, not a target), got %+v", cfg)
+		}
+	})
+
+	t.Run("double-colon lint rule is accepted", func(t *testing.T) {
+		dir := t.TempDir()
+		// GNU make supports `lint::` double-colon rules; the tightened
+		// regex must still accept them.
+		mustWrite(t, filepath.Join(dir, "Makefile"), "lint::\n\techo double-colon rule\n")
+		lookPathFn = func(string) (string, error) { return "", exec.ErrNotFound }
+
+		cfg, err := detectLinter(dir)
+		if err != nil {
+			t.Fatalf("detectLinter error: %v", err)
+		}
+		if cfg == nil || cfg.Mode != lintModeMake {
+			t.Errorf("expected Mode=make for double-colon rule, got %+v", cfg)
+		}
+	})
+
+	t.Run("GNUmakefile is probed before Makefile", func(t *testing.T) {
+		dir := t.TempDir()
+		// GNU make resolves GNUmakefile before Makefile. The probe must
+		// mirror that, so a repo with a GNUmakefile is detected.
+		mustWrite(t, filepath.Join(dir, "GNUmakefile"), "lint:\n\techo gnu\n")
+		lookPathFn = func(string) (string, error) { return "", exec.ErrNotFound }
+
+		cfg, err := detectLinter(dir)
+		if err != nil {
+			t.Fatalf("detectLinter error: %v", err)
+		}
+		if cfg == nil || cfg.Mode != lintModeMake {
+			t.Errorf("expected Mode=make from GNUmakefile, got %+v", cfg)
+		}
+	})
+
+	t.Run("lowercase makefile is probed before Makefile", func(t *testing.T) {
+		dir := t.TempDir()
+		mustWrite(t, filepath.Join(dir, "makefile"), "lint:\n\techo lower\n")
+		lookPathFn = func(string) (string, error) { return "", exec.ErrNotFound }
+
+		cfg, err := detectLinter(dir)
+		if err != nil {
+			t.Fatalf("detectLinter error: %v", err)
+		}
+		if cfg == nil || cfg.Mode != lintModeMake {
+			t.Errorf("expected Mode=make from lowercase makefile, got %+v", cfg)
+		}
+	})
+
+	t.Run("higher-precedence file without lint target does not fall through", func(t *testing.T) {
+		dir := t.TempDir()
+		// GNUmakefile exists but has no lint target; Makefile has one.
+		// Make's default-file behavior is to use GNUmakefile, so we
+		// must NOT fall through to Makefile — returning nil matches
+		// what `make lint` would actually do (fail with "no rule to
+		// make target 'lint'").
+		mustWrite(t, filepath.Join(dir, "GNUmakefile"), "build:\n\techo build\n")
+		mustWrite(t, filepath.Join(dir, "Makefile"), "lint:\n\techo lint\n")
+		lookPathFn = func(string) (string, error) { return "", exec.ErrNotFound }
+
+		cfg, err := detectLinter(dir)
+		if err != nil {
+			t.Fatalf("detectLinter error: %v", err)
+		}
+		if cfg != nil {
+			t.Errorf("expected nil (GNUmakefile wins precedence and has no lint target), got %+v", cfg)
+		}
+	})
 }
 
 func TestRunLint_NoConfigIsNoop(t *testing.T) {

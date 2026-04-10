@@ -291,13 +291,32 @@ func collectChangedFiles(ctx context.Context, repoDir string) ([]string, error) 
 	}
 	var files []string
 	for _, line := range strings.Split(strings.TrimRight(string(statusOut), "\n"), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
+		// Porcelain v1 lines are "XY PATH" or "XY ORIG -> PATH" for
+		// renames. X and Y are single status chars and there is always
+		// exactly one space between them and the path, so the path
+		// starts at byte 3. Using a byte slice (rather than strings.Fields)
+		// preserves filenames that contain spaces — Fields would shatter
+		// "M  some file.go" into ["M", "some", "file.go"] and the real
+		// path "some file.go" would be lost.
+		//
+		// Git quotes paths that contain special characters (including
+		// spaces) in C-string double-quote syntax. We strip those
+		// surrounding quotes so the path matches the real filename.
+		if len(line) < 4 {
 			continue
 		}
-		parts := strings.Fields(line)
-		if len(parts) >= 2 {
-			files = append(files, parts[len(parts)-1])
+		path := line[3:]
+		if idx := strings.LastIndex(path, " -> "); idx >= 0 {
+			// Rename entry: take the destination side.
+			path = path[idx+4:]
+		}
+		// Strip surrounding double-quotes added by git for paths with
+		// special characters (spaces, non-ASCII, etc.).
+		if len(path) >= 2 && path[0] == '"' && path[len(path)-1] == '"' {
+			path = path[1 : len(path)-1]
+		}
+		if path != "" {
+			files = append(files, path)
 		}
 	}
 	return files, nil
