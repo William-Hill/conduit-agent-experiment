@@ -175,13 +175,20 @@ func Review(
 		return verdict, nil
 	}
 
-	// 3. Collect the diff (including untracked files via `git add -N .`).
-	diff, files, err := collectDiff(ctx, repoDir)
+	// 3. Collect the changed-file set (also stages untracked files via
+	// `git add -N .` so the subsequent diff sees them).
+	files, err := collectChangedFiles(ctx, repoDir)
+	if err != nil {
+		return nil, fmt.Errorf("collecting changed files: %w", err)
+	}
+
+	// 4. Collect the unified diff for the semantic reviewer.
+	diff, err := collectDiff(ctx, repoDir)
 	if err != nil {
 		return nil, fmt.Errorf("collecting diff: %w", err)
 	}
 
-	// 4. Semantic LLM review.
+	// 5. Semantic LLM review.
 	prompt := buildReviewPrompt(issue, plan, dossier, diff, files)
 	llmResult, inTokens, outTokens, err := reviewSemantics(ctx, geminiKey, prompt)
 	if err != nil {
@@ -206,41 +213,28 @@ func Review(
 	return verdict, nil
 }
 
-// collectDiff runs `git add -N .` followed by `git diff HEAD` to produce
-// a unified diff that includes both modified and untracked files. It
-// also returns the list of touched files parsed from `git status --porcelain`.
+// collectChangedFiles stages untracked files via `git add -N .` and
+// returns the list of touched files parsed from `git status --porcelain`.
+// Runs under a shared gitTimeout so a stuck git index or hung subprocess
+// cannot block the pipeline indefinitely.
 //
-// All three git commands share a single gitTimeout bound so a stuck
-// git index or hung subprocess cannot block the pipeline indefinitely.
-func collectDiff(ctx context.Context, repoDir string) (string, []string, error) {
+// `git add -N .` only records intent-to-add — it does not modify file
+// contents — so calling this multiple times is safe and idempotent.
+func collectChangedFiles(ctx context.Context, repoDir string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
 	defer cancel()
 
 	addCmd := exec.CommandContext(ctx, "git", "add", "-N", ".")
 	addCmd.Dir = repoDir
 	if out, err := addCmd.CombinedOutput(); err != nil {
-		return "", nil, fmt.Errorf("git add -N: %w\n%s", err, out)
-	}
-
-	diffCmd := exec.CommandContext(ctx, "git", "diff", "HEAD")
-	diffCmd.Dir = repoDir
-	var diffOut bytes.Buffer
-	diffCmd.Stdout = &diffOut
-	var diffStderr bytes.Buffer
-	diffCmd.Stderr = &diffStderr
-	if err := diffCmd.Run(); err != nil {
-		return "", nil, fmt.Errorf("git diff HEAD: %w\n%s", err, diffStderr.String())
-	}
-	diff := diffOut.String()
-	if len(diff) > maxDiffBytes {
-		diff = diff[:maxDiffBytes] + "\n... (diff truncated)"
+		return nil, fmt.Errorf("git add -N: %w\n%s", err, out)
 	}
 
 	statusCmd := exec.CommandContext(ctx, "git", "status", "--porcelain")
 	statusCmd.Dir = repoDir
 	statusOut, err := statusCmd.Output()
 	if err != nil {
-		return "", nil, fmt.Errorf("git status: %w", err)
+		return nil, fmt.Errorf("git status: %w", err)
 	}
 	var files []string
 	for _, line := range strings.Split(strings.TrimRight(string(statusOut), "\n"), "\n") {
@@ -253,5 +247,30 @@ func collectDiff(ctx context.Context, repoDir string) (string, []string, error) 
 			files = append(files, parts[len(parts)-1])
 		}
 	}
-	return diff, files, nil
+	return files, nil
+}
+
+// collectDiff runs `git diff HEAD` in repoDir and returns the unified
+// diff, truncated to maxDiffBytes. Callers must invoke collectChangedFiles
+// first (within the same Review() pass) so untracked files are staged
+// with `git add -N .` before the diff runs — otherwise new files would
+// be silently omitted from the diff passed to the semantic reviewer.
+func collectDiff(ctx context.Context, repoDir string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	defer cancel()
+
+	diffCmd := exec.CommandContext(ctx, "git", "diff", "HEAD")
+	diffCmd.Dir = repoDir
+	var diffOut bytes.Buffer
+	diffCmd.Stdout = &diffOut
+	var diffStderr bytes.Buffer
+	diffCmd.Stderr = &diffStderr
+	if err := diffCmd.Run(); err != nil {
+		return "", fmt.Errorf("git diff HEAD: %w\n%s", err, diffStderr.String())
+	}
+	diff := diffOut.String()
+	if len(diff) > maxDiffBytes {
+		diff = diff[:maxDiffBytes] + "\n... (diff truncated)"
+	}
+	return diff, nil
 }
