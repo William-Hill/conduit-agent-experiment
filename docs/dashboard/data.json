@@ -1,6 +1,24 @@
 {
-  "updated_at": "2026-04-09T21:55:21Z",
+  "updated_at": "2026-04-10T10:17:25Z",
   "runs": [
+    {
+      "budget_exceeded": false,
+      "cache_creation_tokens": 14188,
+      "cache_read_tokens": 99316,
+      "estimated_cost_usd": 0.148585,
+      "input_tokens": 104905,
+      "issue_number": 1268,
+      "issue_title": "Write a guide about embedding Conduit",
+      "iterations": 15,
+      "model": "claude-haiku-4-5-20251001",
+      "output_tokens": 8736,
+      "plan_chars": 19650,
+      "summary": "Excellent! All files have been created successfully. Let me provide a summary:\n\n## Summary\n\nI have successfully created all three files as specified in the implementation plan:\n\n### 1. **`examples/embedding/pipeline.yaml`** (366 bytes)\n   - Defines a simple Conduit pipeline configuration\n   - Includes a generator source that produces 5 records\n   - Routes records to a log destination\n   - Configuration file used by the ProvisioningService in the example\n\n### 2. **`examples/embedding/main.go`** (3,430 bytes)\n   - Complete Go application demonstrating Conduit embedding\n   - Initializes Conduit runtime with:\n     - In-memory database for simplicity\n     - API disabled (no HTTP/gRPC)\n     - Debug logging with CLI format\n   - Provisions pipelines from `pipeline.yaml`\n   - Implements graceful shutdown with signal handling (Ctrl+C)\n   - Demonstrates error handling and resource cleanup\n\n### 3. **`docs/guides/embedding-conduit/index.md`** (14,637 bytes)\n   - Comprehensive guide for embedding Conduit in Go applications\n   - Covers prerequisites and setup\n   - Explains runtime initialization and configuration\n   - Documents `conduit.Config` struct options\n   - Shows two pipeline management approaches:\n     - File-based provisioning (simplest)\n     - Programmatic creation via Orchestrator (advanced)\n   - Includes multiple code examples\n   - Provides verification and testing instructions\n\n### Build Status\n✅ **Build successful** - `go build ./...` completed with exit code 0\n\nAll files are in place and the codebase builds without errors.",
+      "timestamp": "2026-04-10T10:17:08Z",
+      "run_id": 24238052534,
+      "status": "failure",
+      "duration_seconds": 162
+    },
     {
       "budget_exceeded": false,
       "cache_creation_tokens": 9350,
