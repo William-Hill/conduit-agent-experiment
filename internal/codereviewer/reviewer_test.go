@@ -333,3 +333,161 @@ func gitCommitAll(t *testing.T, dir, msg string) {
 		}
 	}
 }
+
+// stubReviewSemantics is a helper that replaces reviewSemantics for the
+// duration of a test and restores it on cleanup. Returns a pointer to
+// the call counter so tests can assert whether the semantic call was
+// reached.
+func stubReviewSemantics(t *testing.T, verdict *llmVerdict) *int {
+	t.Helper()
+	calls := 0
+	orig := reviewSemantics
+	reviewSemantics = func(ctx context.Context, apiKey, prompt string) (*llmVerdict, int, int, error) {
+		calls++
+		return verdict, 10, 5, nil
+	}
+	t.Cleanup(func() { reviewSemantics = orig })
+	return &calls
+}
+
+// stubRunLint replaces runLintFn for the duration of a test.
+func stubRunLint(t *testing.T, res *CheckResult, err error) {
+	t.Helper()
+	orig := runLintFn
+	runLintFn = func(ctx context.Context, repoDir string) (*CheckResult, error) {
+		return res, err
+	}
+	t.Cleanup(func() { runLintFn = orig })
+}
+
+// newReviewableRepo builds a git repo with a trivial main.go commit
+// plus a dirty edit, so collectChangedFiles / collectDiff have something
+// to return. Used by the lint-wiring tests below.
+func newReviewableRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "go.mod"), "module testmod\n\ngo 1.21\n")
+	mustWrite(t, filepath.Join(dir, "main.go"), "package main\n\nfunc main() {}\n")
+	gitInit(t, dir)
+	gitCommitAll(t, dir, "initial")
+	// Dirty edit so collectChangedFiles returns main.go.
+	mustWrite(t, filepath.Join(dir, "main.go"), "package main\n\nfunc main() { _ = 1 }\n")
+	return dir
+}
+
+func TestReview_LintPassesThenSemanticRuns(t *testing.T) {
+	dir := newReviewableRepo(t)
+	stubRunLint(t, &CheckResult{Passed: true, Output: "lint: ok"}, nil)
+	calls := stubReviewSemantics(t, &llmVerdict{Approved: true, Feedback: "looks good"})
+
+	verdict, err := Review(context.Background(), "dummy-key", dir,
+		&github.Issue{Number: 1, Title: "t", Body: "t"},
+		&planner.ImplementationPlan{Markdown: "plan"},
+		&archivist.Dossier{Summary: "summary"},
+	)
+	if err != nil {
+		t.Fatalf("Review error: %v", err)
+	}
+	if !verdict.Approved {
+		t.Errorf("expected Approved=true, got %+v", verdict)
+	}
+	if verdict.LintOutput != "lint: ok" {
+		t.Errorf("expected LintOutput='lint: ok', got %q", verdict.LintOutput)
+	}
+	if *calls != 1 {
+		t.Errorf("expected 1 semantic call, got %d", *calls)
+	}
+}
+
+func TestReview_LintFailsInChangedFiles(t *testing.T) {
+	dir := newReviewableRepo(t)
+	// main.go is the only changed file; report an error on it.
+	lintOut := "main.go:1:1: exported function main should have comment (golint)\n"
+	stubRunLint(t, &CheckResult{Passed: false, ExitCode: 1, Output: lintOut}, nil)
+	calls := stubReviewSemantics(t, &llmVerdict{Approved: true, Feedback: "unreachable"})
+
+	verdict, err := Review(context.Background(), "dummy-key", dir,
+		&github.Issue{Number: 1, Title: "t", Body: "t"},
+		&planner.ImplementationPlan{Markdown: "plan"},
+		&archivist.Dossier{Summary: "summary"},
+	)
+	if err != nil {
+		t.Fatalf("Review error: %v", err)
+	}
+	if verdict.Approved {
+		t.Errorf("expected Approved=false, got %+v", verdict)
+	}
+	if verdict.Category != "lint" {
+		t.Errorf("expected Category=lint, got %q", verdict.Category)
+	}
+	if verdict.LintErrorsKept != 1 {
+		t.Errorf("expected LintErrorsKept=1, got %d", verdict.LintErrorsKept)
+	}
+	if verdict.LintErrorsDropped != 0 {
+		t.Errorf("expected LintErrorsDropped=0, got %d", verdict.LintErrorsDropped)
+	}
+	if !strings.Contains(verdict.Feedback, "## Lint Errors") {
+		t.Errorf("expected feedback to contain lint header, got %q", verdict.Feedback)
+	}
+	if *calls != 0 {
+		t.Errorf("expected 0 semantic calls (short circuit), got %d", *calls)
+	}
+}
+
+func TestReview_LintFailsOnlyInUnchangedFiles_AdvisoryPass(t *testing.T) {
+	dir := newReviewableRepo(t)
+	// Error in a file that is NOT in the changed set — pre-existing debt.
+	lintOut := "unchanged/pre_existing.go:42:5: some warning (stylecheck)\n"
+	stubRunLint(t, &CheckResult{Passed: false, ExitCode: 1, Output: lintOut}, nil)
+	calls := stubReviewSemantics(t, &llmVerdict{Approved: true, Feedback: "looks good"})
+
+	verdict, err := Review(context.Background(), "dummy-key", dir,
+		&github.Issue{Number: 1, Title: "t", Body: "t"},
+		&planner.ImplementationPlan{Markdown: "plan"},
+		&archivist.Dossier{Summary: "summary"},
+	)
+	if err != nil {
+		t.Fatalf("Review error: %v", err)
+	}
+	if !verdict.Approved {
+		t.Errorf("expected Approved=true (advisory pass), got %+v", verdict)
+	}
+	if verdict.LintErrorsKept != 0 {
+		t.Errorf("expected LintErrorsKept=0, got %d", verdict.LintErrorsKept)
+	}
+	if verdict.LintErrorsDropped != 1 {
+		t.Errorf("expected LintErrorsDropped=1, got %d", verdict.LintErrorsDropped)
+	}
+	if *calls != 1 {
+		t.Errorf("expected 1 semantic call, got %d", *calls)
+	}
+}
+
+func TestReview_LintDetectionReturnsNil_SilentSkip(t *testing.T) {
+	dir := newReviewableRepo(t)
+	// RunLint returns the no-op sentinel CheckResult.
+	stubRunLint(t, &CheckResult{Passed: true, Output: "lint: no configuration detected, skipped"}, nil)
+	calls := stubReviewSemantics(t, &llmVerdict{Approved: true, Feedback: "ok"})
+
+	verdict, err := Review(context.Background(), "dummy-key", dir,
+		&github.Issue{Number: 1, Title: "t", Body: "t"},
+		&planner.ImplementationPlan{Markdown: "plan"},
+		&archivist.Dossier{Summary: "summary"},
+	)
+	if err != nil {
+		t.Fatalf("Review error: %v", err)
+	}
+	if !verdict.Approved {
+		t.Errorf("expected Approved=true, got %+v", verdict)
+	}
+	if !strings.Contains(verdict.LintOutput, "no configuration detected") {
+		t.Errorf("expected LintOutput to contain skip sentinel, got %q", verdict.LintOutput)
+	}
+	if verdict.LintErrorsKept != 0 || verdict.LintErrorsDropped != 0 {
+		t.Errorf("expected zero lint counters on skip, got kept=%d dropped=%d",
+			verdict.LintErrorsKept, verdict.LintErrorsDropped)
+	}
+	if *calls != 1 {
+		t.Errorf("expected 1 semantic call, got %d", *calls)
+	}
+}

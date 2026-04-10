@@ -83,6 +83,10 @@ type llmVerdict struct {
 // Default is the real Gemini Flash call in callGeminiForReview.
 var reviewSemantics = callGeminiForReview
 
+// runLintFn is a package var so tests can replace it with a stub.
+// Default is the real RunLint implementation in linter.go.
+var runLintFn = RunLint
+
 // callGeminiForReview makes a single gemini-2.5-flash call with the
 // system prompt and user prompt, parses the JSON response, and returns
 // the verdict plus token usage. Bounded by geminiTimeout so a hung
@@ -182,13 +186,36 @@ func Review(
 		return nil, fmt.Errorf("collecting changed files: %w", err)
 	}
 
-	// 4. Collect the unified diff for the semantic reviewer.
+	// 4. Target-repo linter. Filters errors by changed files so
+	// pre-existing lint debt in the target repo cannot block the
+	// pipeline on code we did not touch.
+	lint, err := runLintFn(ctx, repoDir)
+	if err != nil {
+		return nil, fmt.Errorf("running lint: %w", err)
+	}
+	verdict.LintOutput = lint.Output
+	if !lint.Passed {
+		kept, dropped := filterLintErrors(lint.Output, files)
+		verdict.LintErrorsKept = len(kept)
+		verdict.LintErrorsDropped = dropped
+		if len(kept) > 0 {
+			verdict.Approved = false
+			verdict.Category = "lint"
+			verdict.Summary = fmt.Sprintf("%d lint error(s) in changed files", len(kept))
+			verdict.Feedback = formatLintFeedback(kept)
+			return verdict, nil
+		}
+		// Advisory pass — all reported errors are in unchanged files
+		// and therefore pre-existing debt we should not retry on.
+	}
+
+	// 5. Collect the unified diff for the semantic reviewer.
 	diff, err := collectDiff(ctx, repoDir)
 	if err != nil {
 		return nil, fmt.Errorf("collecting diff: %w", err)
 	}
 
-	// 5. Semantic LLM review.
+	// 6. Semantic LLM review.
 	prompt := buildReviewPrompt(issue, plan, dossier, diff, files)
 	llmResult, inTokens, outTokens, err := reviewSemantics(ctx, geminiKey, prompt)
 	if err != nil {
