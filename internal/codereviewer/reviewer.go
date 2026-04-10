@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os/exec"
 	"strings"
 	"time"
@@ -189,6 +190,7 @@ func Review(
 	// 4. Target-repo linter. Filters errors by changed files so
 	// pre-existing lint debt in the target repo cannot block the
 	// pipeline on code we did not touch.
+	log.Printf("Running target-repo linter...")
 	lint, err := runLintFn(ctx, repoDir)
 	if err != nil {
 		return nil, fmt.Errorf("running lint: %w", err)
@@ -208,6 +210,7 @@ func Review(
 		// Advisory pass — all reported errors are in unchanged files
 		// and therefore pre-existing debt we should not retry on.
 	}
+	log.Printf("Lint check: passed=%v kept=%d dropped=%d", lint.Passed, verdict.LintErrorsKept, verdict.LintErrorsDropped)
 
 	// 5. Collect the unified diff for the semantic reviewer.
 	diff, err := collectDiff(ctx, repoDir)
