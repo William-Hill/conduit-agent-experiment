@@ -1,6 +1,36 @@
 {
-  "updated_at": "2026-04-10T10:17:25Z",
+  "updated_at": "2026-04-10T16:06:34Z",
   "runs": [
+    {
+      "budget_exceeded": false,
+      "cache_creation_tokens": 24123,
+      "cache_read_tokens": 361845,
+      "code_review": {
+        "approved": false,
+        "build_passed": false,
+        "category": "build",
+        "cost_usd": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "retried": true,
+        "semantic_result": "",
+        "summary": "go build failed",
+        "vet_passed": false
+      },
+      "estimated_cost_usd": 0.71346,
+      "input_tokens": 559100,
+      "issue_number": 1268,
+      "issue_title": "Write a guide about embedding Conduit",
+      "iterations": 30,
+      "model": "claude-haiku-4-5-20251001",
+      "output_tokens": 30872,
+      "plan_chars": 35416,
+      "summary": "Now let me check the orchestrator API:",
+      "timestamp": "2026-04-10T16:06:18Z",
+      "run_id": 24251970553,
+      "status": "failure",
+      "duration_seconds": 312
+    },
     {
       "budget_exceeded": false,
       "cache_creation_tokens": 14188,
