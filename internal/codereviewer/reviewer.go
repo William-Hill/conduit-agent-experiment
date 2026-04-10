@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/archivist"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/cost"
@@ -62,6 +63,16 @@ const geminiModel = "gemini-2.5-flash"
 // blow up the prompt. 32 KiB is ~8k tokens — well under Flash's limit.
 const maxDiffBytes = 32 * 1024
 
+// Stage-local timeouts for the non-go-toolchain steps of Review.
+// runGo has its own checkTimeout; these cover the git commands in
+// collectDiff and the Gemini call in callGeminiForReview so that a
+// stuck git index, hung subprocess, or slow model response cannot
+// block PR creation indefinitely.
+const (
+	gitTimeout    = 30 * time.Second
+	geminiTimeout = 60 * time.Second
+)
+
 // llmVerdict is the JSON shape the semantic LLM returns.
 type llmVerdict struct {
 	Approved bool   `json:"approved"`
@@ -74,8 +85,12 @@ var reviewSemantics = callGeminiForReview
 
 // callGeminiForReview makes a single gemini-2.5-flash call with the
 // system prompt and user prompt, parses the JSON response, and returns
-// the verdict plus token usage.
+// the verdict plus token usage. Bounded by geminiTimeout so a hung
+// model response cannot block PR creation indefinitely.
 func callGeminiForReview(ctx context.Context, apiKey, prompt string) (*llmVerdict, int, int, error) {
+	ctx, cancel := context.WithTimeout(ctx, geminiTimeout)
+	defer cancel()
+
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{APIKey: apiKey})
 	if err != nil {
 		return nil, 0, 0, fmt.Errorf("creating genai client: %w", err)
@@ -194,7 +209,13 @@ func Review(
 // collectDiff runs `git add -N .` followed by `git diff HEAD` to produce
 // a unified diff that includes both modified and untracked files. It
 // also returns the list of touched files parsed from `git status --porcelain`.
+//
+// All three git commands share a single gitTimeout bound so a stuck
+// git index or hung subprocess cannot block the pipeline indefinitely.
 func collectDiff(ctx context.Context, repoDir string) (string, []string, error) {
+	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	defer cancel()
+
 	addCmd := exec.CommandContext(ctx, "git", "add", "-N", ".")
 	addCmd.Dir = repoDir
 	if out, err := addCmd.CombinedOutput(); err != nil {
