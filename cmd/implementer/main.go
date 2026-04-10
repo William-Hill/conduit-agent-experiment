@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/archivist"
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/codereviewer"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/cost"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/github"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/hitl"
@@ -183,7 +184,8 @@ func main() {
 	log.Printf("Summary: %s", result.Summary)
 
 	// Write run artifacts for CI (GitHub Actions artifact upload)
-	if artifactDir := os.Getenv("IMPL_ARTIFACT_DIR"); artifactDir != "" {
+	artifactDir := os.Getenv("IMPL_ARTIFACT_DIR")
+	if artifactDir != "" {
 		writeRunArtifacts(artifactDir, issue, result, modelName, plan)
 	}
 
@@ -219,6 +221,135 @@ func main() {
 	if len(statusOutput) > 0 {
 		log.Printf("Status:\n%s", string(statusOutput))
 	}
+
+	// 9a. Internal code review (re-runs go build/vet externally and
+	// makes one Gemini Flash call for semantic checks). See #33.
+	log.Printf("Running internal code reviewer...")
+	verdict, err := codereviewer.Review(ctx, geminiKey, repoDir, fullIssue, plan, dossier)
+	if err != nil {
+		log.Fatalf("code reviewer failed: %v", err)
+	}
+	log.Printf("Code review verdict: approved=%v category=%q summary=%s",
+		verdict.Approved, verdict.Category, verdict.Summary)
+
+	// reviewRetried records whether the retry path was consumed so the
+	// final artifact write reports it accurately — even on the path
+	// where the retry succeeded and the second review approved.
+	reviewRetried := false
+
+	if !verdict.Approved {
+		reviewRetried = true
+		log.Printf("Code review rejected: %s", verdict.Feedback)
+		log.Printf("Retrying implementer with reviewer feedback...")
+
+		retryPlan := &planner.ImplementationPlan{
+			Markdown: plan.Markdown +
+				"\n\n## Reviewer Feedback\n\nThe previous implementation was rejected:\n\n" +
+				verdict.Feedback +
+				"\n\nFix the issues above. The build and vet checks will be re-run.",
+		}
+
+		// Derive the remaining budget so total spend across the
+		// original run + retry stays bounded by IMPL_MAX_COST (the
+		// contract the PR description promised). RunAgent enforces
+		// maxCost per invocation, so passing implMaxCost unchanged
+		// would let a run that spent 90% of the cap spend nearly the
+		// whole cap again on retry.
+		//
+		// implMaxCost == 0 means "no limit" — preserve that by
+		// passing 0 through unchanged.
+		retryBudget := implMaxCost
+		if implMaxCost > 0 {
+			costModel := modelName
+			if costModel == "" {
+				costModel = "claude-haiku-4-5-20251001"
+			}
+			firstRunCost := cost.CalculateWithCache(costModel,
+				result.InputTokens, result.CacheCreationTokens,
+				result.CacheReadTokens, result.OutputTokens)
+			retryBudget = implMaxCost - firstRunCost
+			if retryBudget <= 0 {
+				log.Printf("No budget remaining after first run ($%.4f / $%.4f) — halting without retry",
+					firstRunCost, implMaxCost)
+				result.BudgetExceeded = true
+				if artifactDir != "" {
+					writeRunArtifacts(artifactDir, issue, result, modelName, plan)
+				}
+				writeCodeReviewArtifact(artifactDir, verdict, true)
+				os.RemoveAll(repoDir)
+				os.RemoveAll(dossierDir)
+				os.Exit(1)
+			}
+			log.Printf("Retry budget: $%.4f remaining (spent $%.4f on first pass of $%.4f cap)",
+				retryBudget, firstRunCost, implMaxCost)
+		}
+
+		retryResult, rerr := implementer.RunAgent(ctx, anthropicKey, modelName,
+			repoDir, retryPlan, maxIter, retryBudget)
+		if rerr != nil {
+			writeCodeReviewArtifact(artifactDir, verdict, true)
+			log.Fatalf("implementer retry failed: %v", rerr)
+		}
+		log.Printf("Retry completed in %d iterations", retryResult.Iterations)
+
+		// Merge retry token counts into the primary result so
+		// run-summary.json reflects total implementer spend.
+		result.Iterations += retryResult.Iterations
+		result.InputTokens += retryResult.InputTokens
+		result.OutputTokens += retryResult.OutputTokens
+		result.CacheCreationTokens += retryResult.CacheCreationTokens
+		result.CacheReadTokens += retryResult.CacheReadTokens
+		if retryResult.BudgetExceeded {
+			result.BudgetExceeded = true
+		}
+
+		// Refresh run-summary.json with the merged totals so top-level
+		// iterations / token counts / estimated_cost_usd reflect the
+		// retry, not the stale first-run values written at L188.
+		if artifactDir != "" {
+			writeRunArtifacts(artifactDir, issue, result, modelName, plan)
+		}
+
+		if result.BudgetExceeded {
+			log.Printf("Implementer budget exceeded during retry (IMPL_MAX_COST=$%.4f) — halting", implMaxCost)
+			writeCodeReviewArtifact(artifactDir, verdict, true)
+			os.RemoveAll(repoDir)
+			os.RemoveAll(dossierDir)
+			os.Exit(1)
+		}
+
+		// Re-review after the retry. Pass retryPlan (not the original
+		// plan) so the semantic reviewer can see the specific feedback
+		// the retry was asked to address and verify it was applied —
+		// otherwise a retry could be approved even if it ignored every
+		// requested fix.
+		verdict, err = codereviewer.Review(ctx, geminiKey, repoDir, fullIssue, retryPlan, dossier)
+		if err != nil {
+			// Write a partial verdict so operators can diagnose why the
+			// pipeline halted after the retry was already consumed.
+			// verdict is nil when Review errors, so construct one here.
+			writeCodeReviewArtifact(artifactDir, &codereviewer.Verdict{
+				Approved: false,
+				Category: "reviewer_error",
+				Summary:  fmt.Sprintf("code reviewer (retry) failed: %v", err),
+			}, true)
+			log.Fatalf("code reviewer (retry) failed: %v", err)
+		}
+		log.Printf("Retry code review verdict: approved=%v category=%q summary=%s",
+			verdict.Approved, verdict.Category, verdict.Summary)
+		if !verdict.Approved {
+			log.Printf("Code review still rejected after retry: %s", verdict.Feedback)
+			writeCodeReviewArtifact(artifactDir, verdict, true)
+			log.Fatalf("halting before PR creation — code review failed twice")
+		}
+		log.Printf("Code review approved after retry")
+	}
+
+	// Record the final verdict. Must happen before step 10 so the
+	// artifact reflects review state even if PR upsert fails.
+	// reviewRetried preserves the retry signal on the
+	// successful-after-retry path.
+	writeCodeReviewArtifact(artifactDir, verdict, reviewRetried)
 
 	// 10. Create or update branch and draft PR (handles collisions)
 	branch := fmt.Sprintf("agent/fix-%d", issue.Number)
@@ -258,10 +389,8 @@ func main() {
 	}
 
 	// Update artifact with PR URL (skipped when no PR was created)
-	if prURL != "" {
-		if artifactDir := os.Getenv("IMPL_ARTIFACT_DIR"); artifactDir != "" {
-			appendPRURL(artifactDir, prURL)
-		}
+	if prURL != "" && artifactDir != "" {
+		appendPRURL(artifactDir, prURL)
 	}
 
 	// 11. Gate 3: Bot review loop + human approval (HITL)
@@ -538,4 +667,60 @@ func fetchPRComments(ctx context.Context, adapter *github.Adapter, prNum int) ([
 		return nil, fmt.Errorf("gh api: %w\n%s", err, stderr.String())
 	}
 	return out, nil
+}
+
+// writeCodeReviewArtifact merges the code review verdict into
+// run-summary.json under a "code_review" key. Mirrors the appendPRURL
+// pattern: read JSON, merge, write back. No-op when dir is empty.
+//
+// retried indicates whether the retry path was consumed during this
+// run (true = this verdict is the result of the second attempt).
+func writeCodeReviewArtifact(dir string, verdict *codereviewer.Verdict, retried bool) {
+	if dir == "" || verdict == nil {
+		return
+	}
+	path := filepath.Join(dir, "run-summary.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		log.Printf("Warning: failed to read run-summary.json for code-review update: %v", err)
+		return
+	}
+	var summary map[string]any
+	if err := json.Unmarshal(data, &summary); err != nil {
+		log.Printf("Warning: failed to parse run-summary.json: %v", err)
+		return
+	}
+	// Derive build_passed / vet_passed from category by explicitly
+	// enumerating the success cases rather than subtracting failure
+	// categories. This keeps unknown categories (e.g. reviewer_error)
+	// conservatively false instead of silently reporting both gates
+	// as passed, and makes the semantics obvious at a glance:
+	//
+	//	""         — build + vet + semantic all passed
+	//	"vet"      — build passed, vet failed, semantic not run
+	//	"semantic" — build + vet passed, semantic rejected
+	//	"build"    — build failed, vet not run, semantic not run
+	//	other      — runner/reviewer error; stage state unknown
+	buildPassed := verdict.Category == "" || verdict.Category == "vet" || verdict.Category == "semantic"
+	vetPassed := verdict.Category == "" || verdict.Category == "semantic"
+	summary["code_review"] = map[string]any{
+		"approved":        verdict.Approved,
+		"category":        verdict.Category,
+		"summary":         verdict.Summary,
+		"retried":         retried,
+		"build_passed":    buildPassed,
+		"vet_passed":      vetPassed,
+		"semantic_result": verdict.SemanticResult,
+		"input_tokens":    verdict.InputTokens,
+		"output_tokens":   verdict.OutputTokens,
+		"cost_usd":        verdict.CostUSD,
+	}
+	updated, err := json.MarshalIndent(summary, "", "  ")
+	if err != nil {
+		log.Printf("Warning: failed to marshal updated run-summary: %v", err)
+		return
+	}
+	if err := os.WriteFile(path, updated, 0o644); err != nil {
+		log.Printf("Warning: failed to write updated run-summary: %v", err)
+	}
 }
