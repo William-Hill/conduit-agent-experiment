@@ -144,6 +144,61 @@ func TestRunVet_OutputTruncation(t *testing.T) {
 	}
 }
 
+func TestReview_ShortCircuitsOnBuildFailure(t *testing.T) {
+	// Repo fails to build; empty geminiKey would fail any LLM call —
+	// so if short-circuit works, we never reach the LLM and no error bubbles.
+	dir := writeTestModule(t, "package main\n\nfunc main() { undefinedSymbol() }\n")
+	verdict, err := Review(context.Background(), "", dir,
+		&github.Issue{Number: 1, Title: "test", Body: "test"},
+		&planner.ImplementationPlan{Markdown: "test plan"},
+		&archivist.Dossier{Summary: "test"},
+	)
+	if err != nil {
+		t.Fatalf("Review should not error on build failure (should short-circuit): %v", err)
+	}
+	if verdict.Approved {
+		t.Error("expected Approved=false on build failure")
+	}
+	if verdict.Category != "build" {
+		t.Errorf("expected Category=build, got %q", verdict.Category)
+	}
+	if verdict.Feedback == "" {
+		t.Error("expected non-empty Feedback")
+	}
+	if !strings.Contains(verdict.BuildOutput, "undefined") {
+		t.Errorf("expected BuildOutput to contain 'undefined', got: %s", verdict.BuildOutput)
+	}
+}
+
+func TestReview_ShortCircuitsOnVetFailure(t *testing.T) {
+	content := `package main
+
+import "fmt"
+
+func main() {
+	fmt.Printf("%d\n", "not a number")
+}
+`
+	dir := writeTestModule(t, content)
+	verdict, err := Review(context.Background(), "", dir,
+		&github.Issue{Number: 1, Title: "test", Body: "test"},
+		&planner.ImplementationPlan{Markdown: "test plan"},
+		&archivist.Dossier{Summary: "test"},
+	)
+	if err != nil {
+		t.Fatalf("Review should not error on vet failure (should short-circuit): %v", err)
+	}
+	if verdict.Approved {
+		t.Error("expected Approved=false on vet failure")
+	}
+	if verdict.Category != "vet" {
+		t.Errorf("expected Category=vet, got %q", verdict.Category)
+	}
+	if verdict.VetOutput == "" {
+		t.Error("expected non-empty VetOutput")
+	}
+}
+
 func TestBuildReviewPrompt(t *testing.T) {
 	issue := &github.Issue{
 		Number: 42,
