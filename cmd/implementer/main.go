@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/archivist"
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/codereviewer"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/cost"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/github"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/hitl"
@@ -538,4 +539,47 @@ func fetchPRComments(ctx context.Context, adapter *github.Adapter, prNum int) ([
 		return nil, fmt.Errorf("gh api: %w\n%s", err, stderr.String())
 	}
 	return out, nil
+}
+
+// writeCodeReviewArtifact merges the code review verdict into
+// run-summary.json under a "code_review" key. Mirrors the appendPRURL
+// pattern: read JSON, merge, write back. No-op when dir is empty.
+//
+// retried indicates whether the retry path was consumed during this
+// run (true = this verdict is the result of the second attempt).
+func writeCodeReviewArtifact(dir string, verdict *codereviewer.Verdict, retried bool) {
+	if dir == "" || verdict == nil {
+		return
+	}
+	path := filepath.Join(dir, "run-summary.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		log.Printf("Warning: failed to read run-summary.json for code-review update: %v", err)
+		return
+	}
+	var summary map[string]any
+	if err := json.Unmarshal(data, &summary); err != nil {
+		log.Printf("Warning: failed to parse run-summary.json: %v", err)
+		return
+	}
+	summary["code_review"] = map[string]any{
+		"approved":        verdict.Approved,
+		"category":        verdict.Category,
+		"summary":         verdict.Summary,
+		"retried":         retried,
+		"build_passed":    verdict.Category != "build",
+		"vet_passed":      verdict.Category != "build" && verdict.Category != "vet",
+		"semantic_result": verdict.SemanticResult,
+		"input_tokens":    verdict.InputTokens,
+		"output_tokens":   verdict.OutputTokens,
+		"cost_usd":        verdict.CostUSD,
+	}
+	updated, err := json.MarshalIndent(summary, "", "  ")
+	if err != nil {
+		log.Printf("Warning: failed to marshal updated run-summary: %v", err)
+		return
+	}
+	if err := os.WriteFile(path, updated, 0o644); err != nil {
+		log.Printf("Warning: failed to write updated run-summary: %v", err)
+	}
 }
