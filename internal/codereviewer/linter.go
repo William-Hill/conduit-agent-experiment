@@ -42,13 +42,18 @@ var lintLineRE = regexp.MustCompile(`^([^:]+):(\d+):(?:(\d+):)?\s*(.+)$`)
 // parsed-but-dropped errors (errors in unchanged files — pre-existing
 // debt we do not want to retry on).
 //
+// repoDir lets the parser normalize absolute paths emitted by linters
+// that run with `$(PWD)` or similar, so "/work/repo/foo.go" can be
+// matched against a changedFiles entry of "foo.go". If repoDir is
+// empty, only leading "./" is stripped.
+//
 // Lines that do not match lintLineRE are ignored entirely, not counted
 // as dropped, because they were never parsed as errors. Parsing stops
 // after lintParseCap matched lines.
-func filterLintErrors(output string, changedFiles []string) ([]lintError, int) {
+func filterLintErrors(output, repoDir string, changedFiles []string) ([]lintError, int) {
 	changed := make(map[string]struct{}, len(changedFiles))
 	for _, f := range changedFiles {
-		changed[normalizeLintPath(f)] = struct{}{}
+		changed[normalizeLintPath(f, repoDir)] = struct{}{}
 	}
 
 	var kept []lintError
@@ -65,7 +70,7 @@ func filterLintErrors(output string, changedFiles []string) ([]lintError, int) {
 		}
 		parsed++
 
-		file := normalizeLintPath(m[1])
+		file := normalizeLintPath(m[1], repoDir)
 		lineNum, _ := strconv.Atoi(m[2])
 		col := 0
 		if m[3] != "" {
@@ -88,12 +93,17 @@ func filterLintErrors(output string, changedFiles []string) ([]lintError, int) {
 	return kept, dropped
 }
 
-// normalizeLintPath strips a leading "./" so that a linter emitting
-// "./internal/foo.go" matches a changedFiles entry of "internal/foo.go".
-// Absolute-path normalization against repoDir is handled by the caller
-// before passing paths into filterLintErrors.
-func normalizeLintPath(p string) string {
-	return strings.TrimPrefix(p, "./")
+// normalizeLintPath strips a leading "./" and, when repoDir is non-empty,
+// a leading repoDir prefix so that a linter emitting absolute paths (e.g.,
+// from `$(PWD)` in a Makefile) matches a changedFiles entry of the
+// equivalent repo-relative path.
+func normalizeLintPath(p, repoDir string) string {
+	p = strings.TrimPrefix(p, "./")
+	if repoDir != "" {
+		p = strings.TrimPrefix(p, repoDir+string(filepath.Separator))
+		p = strings.TrimPrefix(p, repoDir+"/") // safety: forward-slash on any OS
+	}
+	return p
 }
 
 // formatLintFeedback renders a slice of lintError records into the

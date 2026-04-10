@@ -197,7 +197,7 @@ func Review(
 	}
 	verdict.LintOutput = lint.Output
 	if !lint.Passed {
-		kept, dropped := filterLintErrors(lint.Output, files)
+		kept, dropped := filterLintErrors(lint.Output, repoDir, files)
 		verdict.LintErrorsKept = len(kept)
 		verdict.LintErrorsDropped = dropped
 		if len(kept) > 0 {
@@ -209,6 +209,7 @@ func Review(
 		}
 		// Advisory pass — all reported errors are in unchanged files
 		// and therefore pre-existing debt we should not retry on.
+		log.Printf("Lint advisory pass: %d error(s) reported but all in unchanged files (pre-existing debt)", dropped)
 	}
 	log.Printf("Lint check: passed=%v kept=%d dropped=%d", lint.Passed, verdict.LintErrorsKept, verdict.LintErrorsDropped)
 

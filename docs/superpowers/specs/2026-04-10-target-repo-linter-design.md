@@ -162,7 +162,7 @@ LintErrorsKept    int    `json:"lint_errors_kept"`
 LintErrorsDropped int    `json:"lint_errors_dropped"`
 ```
 
-`writeCodeReviewArtifact` at `cmd/implementer/main.go:678` serializes `Verdict` as-is, so the new fields appear in `code-review.json` automatically.
+`cmd/implementer/main.go`'s `writeCodeReviewArtifact` currently builds a hand-curated `map[string]any` that is merged into `run-summary.json` under a `code_review` key (there is no separate `code-review.json`). The fix for #34 extends that map to include `lint_output`, `lint_errors_kept`, and `lint_errors_dropped` alongside the existing diagnostic fields, and also extends the `buildPassed` / `vetPassed` derivation to recognize `Category="lint"` as "both earlier gates passed."
 
 ## Logging
 

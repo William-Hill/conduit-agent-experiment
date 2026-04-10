@@ -13,6 +13,7 @@ func TestFilterLintErrors(t *testing.T) {
 	cases := []struct {
 		name         string
 		output       string
+		repoDir      string
 		changedFiles []string
 		wantKept     []lintError
 		wantDropped  int
@@ -78,11 +79,22 @@ func TestFilterLintErrors(t *testing.T) {
 			wantKept:     nil,
 			wantDropped:  0,
 		},
+		{
+			name: "absolute paths stripped against repoDir",
+			output: "/work/repo/internal/foo.go:10:1: real error (ineffassign)\n" +
+				"/work/repo/internal/unchanged.go:5:2: not ours\n",
+			repoDir:      "/work/repo",
+			changedFiles: []string{"internal/foo.go"},
+			wantKept: []lintError{
+				{File: "internal/foo.go", Line: 10, Col: 1, Message: "real error (ineffassign)"},
+			},
+			wantDropped: 1,
+		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			kept, dropped := filterLintErrors(tc.output, tc.changedFiles)
+			kept, dropped := filterLintErrors(tc.output, tc.repoDir, tc.changedFiles)
 			if !reflect.DeepEqual(kept, tc.wantKept) {
 				t.Errorf("kept:\n  got:  %#v\n  want: %#v", kept, tc.wantKept)
 			}

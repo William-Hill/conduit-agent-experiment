@@ -696,24 +696,32 @@ func writeCodeReviewArtifact(dir string, verdict *codereviewer.Verdict, retried 
 	// conservatively false instead of silently reporting both gates
 	// as passed, and makes the semantics obvious at a glance:
 	//
-	//	""         — build + vet + semantic all passed
-	//	"vet"      — build passed, vet failed, semantic not run
-	//	"semantic" — build + vet passed, semantic rejected
-	//	"build"    — build failed, vet not run, semantic not run
+	//	""         — build + vet + lint + semantic all passed
+	//	"vet"      — build passed, vet failed, lint/semantic not run
+	//	"lint"     — build + vet passed, lint rejected, semantic not run
+	//	"semantic" — build + vet + lint passed, semantic rejected
+	//	"build"    — build failed, vet not run, lint/semantic not run
 	//	other      — runner/reviewer error; stage state unknown
-	buildPassed := verdict.Category == "" || verdict.Category == "vet" || verdict.Category == "semantic"
-	vetPassed := verdict.Category == "" || verdict.Category == "semantic"
+	// A "lint" or "semantic" rejection both imply that build and vet
+	// already passed. A "vet" rejection implies build passed. These
+	// flags let downstream dashboards bucket the failure mode without
+	// re-running the checks.
+	buildPassed := verdict.Category == "" || verdict.Category == "vet" || verdict.Category == "lint" || verdict.Category == "semantic"
+	vetPassed := verdict.Category == "" || verdict.Category == "lint" || verdict.Category == "semantic"
 	summary["code_review"] = map[string]any{
-		"approved":        verdict.Approved,
-		"category":        verdict.Category,
-		"summary":         verdict.Summary,
-		"retried":         retried,
-		"build_passed":    buildPassed,
-		"vet_passed":      vetPassed,
-		"semantic_result": verdict.SemanticResult,
-		"input_tokens":    verdict.InputTokens,
-		"output_tokens":   verdict.OutputTokens,
-		"cost_usd":        verdict.CostUSD,
+		"approved":            verdict.Approved,
+		"category":            verdict.Category,
+		"summary":             verdict.Summary,
+		"retried":             retried,
+		"build_passed":        buildPassed,
+		"vet_passed":          vetPassed,
+		"semantic_result":     verdict.SemanticResult,
+		"lint_output":         verdict.LintOutput,
+		"lint_errors_kept":    verdict.LintErrorsKept,
+		"lint_errors_dropped": verdict.LintErrorsDropped,
+		"input_tokens":        verdict.InputTokens,
+		"output_tokens":       verdict.OutputTokens,
+		"cost_usd":            verdict.CostUSD,
 	}
 	updated, err := json.MarshalIndent(summary, "", "  ")
 	if err != nil {
