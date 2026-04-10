@@ -39,7 +39,10 @@ var lintLineRE = regexp.MustCompile(`^([^:]+):(\d+):(?:(\d+):)?\s*(.+)$`)
 // filterLintErrors parses lint output and returns only errors whose file
 // path falls within changedFiles. The second return is the count of
 // parsed-but-dropped errors (errors in unchanged files — pre-existing
-// debt we do not want to retry on).
+// debt we do not want to retry on). The third return is true when
+// parsing stopped at lintParseCap — callers should treat a truncated
+// parse with no kept errors as UNSAFE for advisory pass (there may
+// still be changed-file errors beyond the cap).
 //
 // repoDir lets the parser normalize absolute paths emitted by linters
 // that run with `$(PWD)` or similar, so "/work/repo/foo.go" can be
@@ -49,18 +52,17 @@ var lintLineRE = regexp.MustCompile(`^([^:]+):(\d+):(?:(\d+):)?\s*(.+)$`)
 // Lines that do not match lintLineRE are ignored entirely, not counted
 // as dropped, because they were never parsed as errors. Parsing stops
 // after lintParseCap matched lines.
-func filterLintErrors(output, repoDir string, changedFiles []string) ([]lintError, int) {
+func filterLintErrors(output, repoDir string, changedFiles []string) (kept []lintError, dropped int, truncated bool) {
 	changed := make(map[string]struct{}, len(changedFiles))
 	for _, f := range changedFiles {
 		changed[normalizeLintPath(f, repoDir)] = struct{}{}
 	}
 
-	var kept []lintError
-	dropped := 0
 	parsed := 0
 
 	for _, line := range strings.Split(output, "\n") {
 		if parsed >= lintParseCap {
+			truncated = true
 			break
 		}
 		m := lintLineRE.FindStringSubmatch(line)
@@ -89,7 +91,7 @@ func filterLintErrors(output, repoDir string, changedFiles []string) ([]lintErro
 		}
 	}
 
-	return kept, dropped
+	return kept, dropped, truncated
 }
 
 // normalizeLintPath strips a leading "./" and, when repoDir is non-empty,
@@ -127,6 +129,24 @@ func formatLintFeedback(errs []lintError) string {
 		}
 	}
 	b.WriteString("\nRe-run the build and try again.")
+	return b.String()
+}
+
+// formatLintRawFeedback renders the fail-closed message Review() stores
+// in verdict.Feedback when the lint gate failed but its output could
+// not be cleanly classified against the changed-file set (unparseable
+// format, tooling error, or output capped by the 16 KiB runner limit).
+// The implementer gets the raw output verbatim so it can diagnose the
+// issue directly.
+func formatLintRawFeedback(output string) string {
+	var b strings.Builder
+	b.WriteString("## Lint Failure\n\n")
+	b.WriteString("The lint gate failed, but its output could not be cleanly matched against the changed-file set. ")
+	b.WriteString("This may indicate a Makefile or tooling error, an unexpected output format, or output that exceeded the 16 KiB cap. ")
+	b.WriteString("The raw lint output is below — please investigate and fix any violations you introduced.\n\n")
+	b.WriteString("### Raw Lint Output\n\n```\n")
+	b.WriteString(output)
+	b.WriteString("\n```")
 	return b.String()
 }
 

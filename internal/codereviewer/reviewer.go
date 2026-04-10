@@ -189,7 +189,10 @@ func Review(
 
 	// 4. Target-repo linter. Filters errors by changed files so
 	// pre-existing lint debt in the target repo cannot block the
-	// pipeline on code we did not touch.
+	// pipeline on code we did not touch. Fails closed when the
+	// output cannot be safely classified (unparseable format, parser
+	// cap hit, or runner-level truncation) so a silent bypass is
+	// impossible.
 	log.Printf("Running target-repo linter...")
 	lint, err := runLintFn(ctx, repoDir)
 	if err != nil {
@@ -197,9 +200,10 @@ func Review(
 	}
 	verdict.LintOutput = lint.Output
 	if !lint.Passed {
-		kept, dropped := filterLintErrors(lint.Output, repoDir, files)
+		kept, dropped, parserTruncated := filterLintErrors(lint.Output, repoDir, files)
 		verdict.LintErrorsKept = len(kept)
 		verdict.LintErrorsDropped = dropped
+
 		if len(kept) > 0 {
 			verdict.Approved = false
 			verdict.Category = "lint"
@@ -207,8 +211,26 @@ func Review(
 			verdict.Feedback = formatLintFeedback(kept)
 			return verdict, nil
 		}
-		// Advisory pass — all reported errors are in unchanged files
-		// and therefore pre-existing debt we should not retry on.
+
+		// Fail closed when we cannot trust the advisory-pass conclusion:
+		// - dropped == 0 means zero lines matched the regex (unparseable
+		//   format, Makefile tooling error, ANSI codes, etc.)
+		// - parserTruncated means the parser stopped at lintParseCap and
+		//   there may be unseen changed-file errors beyond the cap
+		// - the "... (truncated)" sentinel means runBoundedCmd capped
+		//   the raw output at 16 KiB and there may be unseen errors
+		//   beyond the cap
+		outputTruncated := strings.Contains(lint.Output, "... (truncated)")
+		if dropped == 0 || parserTruncated || outputTruncated {
+			verdict.Approved = false
+			verdict.Category = "lint"
+			verdict.Summary = "lint failed with unclassifiable output"
+			verdict.Feedback = formatLintRawFeedback(lint.Output)
+			return verdict, nil
+		}
+
+		// Safe advisory pass: parser read the full output, at least one
+		// error was parsed, and none of them touched our changed files.
 		log.Printf("Lint advisory pass: %d error(s) reported but all in unchanged files (pre-existing debt)", dropped)
 	}
 	log.Printf("Lint check: passed=%v kept=%d dropped=%d", lint.Passed, verdict.LintErrorsKept, verdict.LintErrorsDropped)

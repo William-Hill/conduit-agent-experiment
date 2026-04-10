@@ -11,12 +11,13 @@ import (
 
 func TestFilterLintErrors(t *testing.T) {
 	cases := []struct {
-		name         string
-		output       string
-		repoDir      string
-		changedFiles []string
-		wantKept     []lintError
-		wantDropped  int
+		name          string
+		output        string
+		repoDir       string
+		changedFiles  []string
+		wantKept      []lintError
+		wantDropped   int
+		wantTruncated bool
 	}{
 		{
 			name: "canonical golangci-lint format with mixed files",
@@ -68,9 +69,10 @@ func TestFilterLintErrors(t *testing.T) {
 				}
 				return sb.String()
 			}(),
-			changedFiles: []string{"something_else.go"},
-			wantKept:     nil,
-			wantDropped:  500, // only 500 are parsed; the rest are not seen
+			changedFiles:  []string{"something_else.go"},
+			wantKept:      nil,
+			wantDropped:   500,
+			wantTruncated: true,
 		},
 		{
 			name:         "empty output",
@@ -94,12 +96,15 @@ func TestFilterLintErrors(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			kept, dropped := filterLintErrors(tc.output, tc.repoDir, tc.changedFiles)
+			kept, dropped, truncated := filterLintErrors(tc.output, tc.repoDir, tc.changedFiles)
 			if !reflect.DeepEqual(kept, tc.wantKept) {
 				t.Errorf("kept:\n  got:  %#v\n  want: %#v", kept, tc.wantKept)
 			}
 			if dropped != tc.wantDropped {
 				t.Errorf("dropped: got %d, want %d", dropped, tc.wantDropped)
+			}
+			if truncated != tc.wantTruncated {
+				t.Errorf("truncated: got %v, want %v", truncated, tc.wantTruncated)
 			}
 		})
 	}
@@ -125,7 +130,28 @@ func TestFormatLintFeedback(t *testing.T) {
 	}
 }
 
+func TestFormatLintRawFeedback(t *testing.T) {
+	output := "make: *** [lint] Error 1\nsomething broke\n"
+	got := formatLintRawFeedback(output)
+
+	// Golden assertions — exact wording drift is caught here so the
+	// implementer's retry prompt stays stable.
+	for _, want := range []string{
+		"## Lint Failure",
+		"could not be cleanly matched",
+		"Raw Lint Output",
+		"```\nmake: *** [lint] Error 1\nsomething broke\n\n```",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("formatLintRawFeedback missing %q.\nGot:\n%s", want, got)
+		}
+	}
+}
+
 func TestDetectLinter(t *testing.T) {
+	// This test and its subtests mutate package-level state (lookPathFn
+	// and the AGENT_LINT env var), so none of them may be marked
+	// t.Parallel() without adding synchronization.
 	// Stub lookPathFn for the whole test so we don't depend on the host
 	// environment having (or not having) golangci-lint installed.
 	t.Cleanup(func() { lookPathFn = exec.LookPath })
@@ -241,6 +267,7 @@ func TestDetectLinter(t *testing.T) {
 }
 
 func TestRunLint_NoConfigIsNoop(t *testing.T) {
+	// Mutates package-level lookPathFn / AGENT_LINT — not parallel-safe.
 	dir := t.TempDir()
 	// Stub lookPathFn so no binary is considered present.
 	t.Cleanup(func() { lookPathFn = exec.LookPath })
@@ -262,6 +289,7 @@ func TestRunLint_NoConfigIsNoop(t *testing.T) {
 }
 
 func TestRunLint_AgentLintOff(t *testing.T) {
+	// Mutates package-level lookPathFn / AGENT_LINT — not parallel-safe.
 	dir := t.TempDir()
 	// Even with a real lint target, AGENT_LINT=off wins.
 	mustWrite(t, filepath.Join(dir, "Makefile"), "lint:\n\techo should-not-run\n")

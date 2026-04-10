@@ -463,6 +463,77 @@ func TestReview_LintFailsOnlyInUnchangedFiles_AdvisoryPass(t *testing.T) {
 	}
 }
 
+func TestReview_LintFailsWithUnparseableOutput(t *testing.T) {
+	// lint exits non-zero but emits output that does NOT match
+	// lintLineRE at all — e.g. Makefile tooling error, summary-only
+	// output, ANSI escape codes. The gate must fail closed, not
+	// silently advisory-pass.
+	dir := newReviewableRepo(t)
+	lintOut := "make: *** [lint] Error 1\nnothing parseable here\n"
+	stubRunLint(t, &CheckResult{Passed: false, ExitCode: 2, Output: lintOut}, nil)
+	calls := stubReviewSemantics(t, &llmVerdict{Approved: true, Feedback: "unreachable"})
+
+	verdict, err := Review(context.Background(), "dummy-key", dir,
+		&github.Issue{Number: 1, Title: "t", Body: "t"},
+		&planner.ImplementationPlan{Markdown: "plan"},
+		&archivist.Dossier{Summary: "summary"},
+	)
+	if err != nil {
+		t.Fatalf("Review error: %v", err)
+	}
+	if verdict.Approved {
+		t.Errorf("expected Approved=false (fail closed), got %+v", verdict)
+	}
+	if verdict.Category != "lint" {
+		t.Errorf("expected Category=lint, got %q", verdict.Category)
+	}
+	if verdict.LintErrorsKept != 0 || verdict.LintErrorsDropped != 0 {
+		t.Errorf("expected zero counters for unparseable output, got kept=%d dropped=%d",
+			verdict.LintErrorsKept, verdict.LintErrorsDropped)
+	}
+	if !strings.Contains(verdict.Feedback, "Lint Failure") {
+		t.Errorf("expected Feedback to contain raw lint failure header, got %q", verdict.Feedback)
+	}
+	if !strings.Contains(verdict.Feedback, "make: *** [lint] Error 1") {
+		t.Errorf("expected Feedback to contain the raw output, got %q", verdict.Feedback)
+	}
+	if *calls != 0 {
+		t.Errorf("expected 0 semantic calls (fail closed), got %d", *calls)
+	}
+}
+
+func TestReview_LintFailsWithOutputCapTruncation(t *testing.T) {
+	// lint exits non-zero with errors only in unchanged files, but
+	// the raw output was capped at 16 KiB by runBoundedCmd and carries
+	// the "... (truncated)" sentinel. We cannot trust that more errors
+	// beyond the cap don't touch our changed files — fail closed.
+	dir := newReviewableRepo(t)
+	lintOut := "unchanged/pre_existing.go:42:5: some warning (stylecheck)\n... (truncated)"
+	stubRunLint(t, &CheckResult{Passed: false, ExitCode: 1, Output: lintOut}, nil)
+	calls := stubReviewSemantics(t, &llmVerdict{Approved: true, Feedback: "unreachable"})
+
+	verdict, err := Review(context.Background(), "dummy-key", dir,
+		&github.Issue{Number: 1, Title: "t", Body: "t"},
+		&planner.ImplementationPlan{Markdown: "plan"},
+		&archivist.Dossier{Summary: "summary"},
+	)
+	if err != nil {
+		t.Fatalf("Review error: %v", err)
+	}
+	if verdict.Approved {
+		t.Errorf("expected Approved=false (fail closed on truncation), got %+v", verdict)
+	}
+	if verdict.Category != "lint" {
+		t.Errorf("expected Category=lint, got %q", verdict.Category)
+	}
+	if !strings.Contains(verdict.Feedback, "Lint Failure") {
+		t.Errorf("expected raw Lint Failure feedback, got %q", verdict.Feedback)
+	}
+	if *calls != 0 {
+		t.Errorf("expected 0 semantic calls (fail closed), got %d", *calls)
+	}
+}
+
 func TestReview_LintDetectionReturnsNil_SilentSkip(t *testing.T) {
 	dir := newReviewableRepo(t)
 	// RunLint returns the no-op sentinel CheckResult.
