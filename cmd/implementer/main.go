@@ -184,7 +184,8 @@ func main() {
 	log.Printf("Summary: %s", result.Summary)
 
 	// Write run artifacts for CI (GitHub Actions artifact upload)
-	if artifactDir := os.Getenv("IMPL_ARTIFACT_DIR"); artifactDir != "" {
+	artifactDir := os.Getenv("IMPL_ARTIFACT_DIR")
+	if artifactDir != "" {
 		writeRunArtifacts(artifactDir, issue, result, modelName, plan)
 	}
 
@@ -220,6 +221,74 @@ func main() {
 	if len(statusOutput) > 0 {
 		log.Printf("Status:\n%s", string(statusOutput))
 	}
+
+	// 9a. Internal code review (re-runs go build/vet externally and
+	// makes one Gemini Flash call for semantic checks). See #33.
+	log.Printf("Running internal code reviewer...")
+	verdict, err := codereviewer.Review(ctx, geminiKey, repoDir, fullIssue, plan, dossier)
+	if err != nil {
+		log.Fatalf("code reviewer failed: %v", err)
+	}
+	log.Printf("Code review verdict: approved=%v category=%q summary=%s",
+		verdict.Approved, verdict.Category, verdict.Summary)
+
+	if !verdict.Approved {
+		log.Printf("Code review rejected: %s", verdict.Feedback)
+		log.Printf("Retrying implementer with reviewer feedback...")
+
+		retryPlan := &planner.ImplementationPlan{
+			Markdown: plan.Markdown +
+				"\n\n## Reviewer Feedback\n\nThe previous implementation was rejected:\n\n" +
+				verdict.Feedback +
+				"\n\nFix the issues above. The build and vet checks will be re-run.",
+		}
+
+		retryResult, rerr := implementer.RunAgent(ctx, anthropicKey, modelName,
+			repoDir, retryPlan, maxIter, implMaxCost)
+		if rerr != nil {
+			writeCodeReviewArtifact(artifactDir, verdict, true)
+			log.Fatalf("implementer retry failed: %v", rerr)
+		}
+		log.Printf("Retry completed in %d iterations", retryResult.Iterations)
+
+		// Merge retry token counts into the primary result so
+		// run-summary.json reflects total implementer spend.
+		result.Iterations += retryResult.Iterations
+		result.InputTokens += retryResult.InputTokens
+		result.OutputTokens += retryResult.OutputTokens
+		result.CacheCreationTokens += retryResult.CacheCreationTokens
+		result.CacheReadTokens += retryResult.CacheReadTokens
+		if retryResult.BudgetExceeded {
+			result.BudgetExceeded = true
+		}
+
+		if result.BudgetExceeded {
+			log.Printf("Implementer budget exceeded during retry (IMPL_MAX_COST=$%.4f) — halting", implMaxCost)
+			writeCodeReviewArtifact(artifactDir, verdict, true)
+			os.RemoveAll(repoDir)
+			os.RemoveAll(dossierDir)
+			os.Exit(1)
+		}
+
+		// Re-review after the retry.
+		verdict, err = codereviewer.Review(ctx, geminiKey, repoDir, fullIssue, plan, dossier)
+		if err != nil {
+			writeCodeReviewArtifact(artifactDir, verdict, true)
+			log.Fatalf("code reviewer (retry) failed: %v", err)
+		}
+		log.Printf("Retry code review verdict: approved=%v category=%q summary=%s",
+			verdict.Approved, verdict.Category, verdict.Summary)
+		if !verdict.Approved {
+			log.Printf("Code review still rejected after retry: %s", verdict.Feedback)
+			writeCodeReviewArtifact(artifactDir, verdict, true)
+			log.Fatalf("halting before PR creation — code review failed twice")
+		}
+		log.Printf("Code review approved after retry")
+	}
+
+	// Record the final (approved) verdict. Must happen before step 10
+	// so the artifact reflects review state even if PR upsert fails.
+	writeCodeReviewArtifact(artifactDir, verdict, false)
 
 	// 10. Create or update branch and draft PR (handles collisions)
 	branch := fmt.Sprintf("agent/fix-%d", issue.Number)
@@ -259,10 +328,8 @@ func main() {
 	}
 
 	// Update artifact with PR URL (skipped when no PR was created)
-	if prURL != "" {
-		if artifactDir := os.Getenv("IMPL_ARTIFACT_DIR"); artifactDir != "" {
-			appendPRURL(artifactDir, prURL)
-		}
+	if prURL != "" && artifactDir != "" {
+		appendPRURL(artifactDir, prURL)
 	}
 
 	// 11. Gate 3: Bot review loop + human approval (HITL)
