@@ -702,10 +702,6 @@ func writeCodeReviewArtifact(dir string, verdict *codereviewer.Verdict, retried 
 	//	"semantic" — build + vet + lint passed, semantic rejected
 	//	"build"    — build failed, vet not run, lint/semantic not run
 	//	other      — runner/reviewer error; stage state unknown
-	// A "lint" or "semantic" rejection both imply that build and vet
-	// already passed. A "vet" rejection implies build passed. These
-	// flags let downstream dashboards bucket the failure mode without
-	// re-running the checks.
 	buildPassed := verdict.Category == "" || verdict.Category == "vet" || verdict.Category == "lint" || verdict.Category == "semantic"
 	vetPassed := verdict.Category == "" || verdict.Category == "lint" || verdict.Category == "semantic"
 	summary["code_review"] = map[string]any{

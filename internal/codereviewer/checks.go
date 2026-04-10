@@ -50,30 +50,40 @@ func (c *cappedBuffer) String() string  { return c.buf.String() }
 func (c *cappedBuffer) Len() int        { return c.buf.Len() }
 func (c *cappedBuffer) Truncated() bool { return c.truncated }
 
-// runGo executes `go <sub> ./...` in repoDir with a bounded environment
-// and timeout. The minimal env mirrors internal/implementer/tools.go:275-281
-// to prevent a compromised target repo from exfiltrating API keys.
-func runGo(ctx context.Context, repoDir, sub string) (*CheckResult, error) {
+// runBoundedCmd builds and executes a command under the package's
+// bounded environment (PATH/HOME/GOPATH/GOROOT/TMPDIR only, plus
+// GOFLAGS=-mod=readonly and GOWORK=off), captures stdout/stderr to
+// maxCheckOutput via cappedBuffer, and applies checkTimeout. It is
+// the shared execution core for go build, go vet, and target-repo
+// lint.
+//
+// The minimal env mirrors internal/implementer/tools.go:275-281 to
+// prevent a compromised target repo from exfiltrating API keys.
+// GOFLAGS=-mod=readonly makes `go build`/`go vet` fail instead of
+// silently mutating go.mod/go.sum when a dependency is missing
+// (it also applies when `make lint` or `golangci-lint` transitively
+// invoke go tools). GOWORK=off disables workspace mode so validation
+// stays deterministic regardless of the CI environment's workspace
+// config.
+//
+// label is used only in error messages for timeouts and non-exit
+// failures (e.g. "go build ./...", "make lint"). A deadline exceeded
+// on ctx returns (nil, error). A non-zero exit code is a verdict,
+// not a runner error: it produces a non-nil CheckResult with
+// Passed=false.
+func runBoundedCmd(ctx context.Context, dir, label, name string, args ...string) (*CheckResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "go", sub, "./...")
-	cmd.Dir = repoDir
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = dir
 	cmd.Env = []string{
 		"PATH=" + os.Getenv("PATH"),
 		"HOME=" + os.Getenv("HOME"),
 		"GOPATH=" + os.Getenv("GOPATH"),
 		"GOROOT=" + os.Getenv("GOROOT"),
 		"TMPDIR=" + os.TempDir(),
-		// -mod=readonly makes `go build`/`go vet` fail instead of
-		// silently mutating go.mod/go.sum when a dependency is
-		// missing. Without this, the reviewer could dirty the working
-		// tree it's supposed to validate and push the unrelated
-		// go.mod churn as part of the PR.
 		"GOFLAGS=-mod=readonly",
-		// GOWORK=off disables workspace mode so the reviewer's
-		// validation stays deterministic regardless of the CI
-		// environment's workspace config.
 		"GOWORK=off",
 	}
 
@@ -89,7 +99,7 @@ func runGo(ctx context.Context, repoDir, sub string) (*CheckResult, error) {
 
 	// Deadline exceeded is a runner error, not a verdict.
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return nil, fmt.Errorf("go %s ./... timed out after %s", sub, checkTimeout)
+		return nil, fmt.Errorf("%s timed out after %s", label, checkTimeout)
 	}
 
 	exitCode := 0
@@ -98,8 +108,8 @@ func runGo(ctx context.Context, repoDir, sub string) (*CheckResult, error) {
 		if errors.As(runErr, &exitErr) {
 			exitCode = exitErr.ExitCode()
 		} else {
-			// Non-exit error (e.g., go binary missing) — bubble up.
-			return nil, fmt.Errorf("running go %s: %w", sub, runErr)
+			// Non-exit error (e.g., binary missing) — bubble up.
+			return nil, fmt.Errorf("running %s: %w", label, runErr)
 		}
 	}
 
@@ -131,10 +141,10 @@ func runGo(ctx context.Context, repoDir, sub string) (*CheckResult, error) {
 
 // RunBuild executes `go build ./...` in repoDir.
 func RunBuild(ctx context.Context, repoDir string) (*CheckResult, error) {
-	return runGo(ctx, repoDir, "build")
+	return runBoundedCmd(ctx, repoDir, "go build ./...", "go", "build", "./...")
 }
 
 // RunVet executes `go vet ./...` in repoDir.
 func RunVet(ctx context.Context, repoDir string) (*CheckResult, error) {
-	return runGo(ctx, repoDir, "vet")
+	return runBoundedCmd(ctx, repoDir, "go vet ./...", "go", "vet", "./...")
 }

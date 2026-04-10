@@ -2,7 +2,6 @@ package codereviewer
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -122,18 +121,27 @@ func formatLintFeedback(errs []lintError) string {
 	b.WriteString("The following lint violations were introduced by your changes. Fix each one:\n\n")
 	for _, e := range errs {
 		if e.Col > 0 {
-			b.WriteString("- " + e.File + ":" + strconv.Itoa(e.Line) + ":" + strconv.Itoa(e.Col) + ": " + e.Message + "\n")
+			fmt.Fprintf(&b, "- %s:%d:%d: %s\n", e.File, e.Line, e.Col, e.Message)
 		} else {
-			b.WriteString("- " + e.File + ":" + strconv.Itoa(e.Line) + ": " + e.Message + "\n")
+			fmt.Fprintf(&b, "- %s:%d: %s\n", e.File, e.Line, e.Message)
 		}
 	}
 	b.WriteString("\nRe-run the build and try again.")
 	return b.String()
 }
 
+// Lint mode identifiers used by detectLinter and RunLint. Typed
+// constants keep the two call sites in lockstep so a rename or
+// typo fails at compile time instead of silently falling into the
+// default switch arm.
+const (
+	lintModeMake         = "make"
+	lintModeGolangciLint = "golangci-lint"
+)
+
 // lintConfig describes which linter RunLint should invoke.
 type lintConfig struct {
-	Mode       string // "make" or "golangci-lint"
+	Mode       string // one of lintModeMake, lintModeGolangciLint
 	ConfigPath string // empty for make mode; path to .golangci.* for golangci-lint mode
 }
 
@@ -157,9 +165,9 @@ var lookPathFn = exec.LookPath
 //
 // Order of precedence:
 //  1. AGENT_LINT=off env var short-circuits to nil (operator kill switch)
-//  2. Makefile with a `^lint:` target → {Mode: "make"}
+//  2. Makefile with a `^lint:` target → {Mode: lintModeMake}
 //  3. golangci-lint binary on PATH AND a .golangci.{yml,yaml,toml}
-//     config in repoDir → {Mode: "golangci-lint", ConfigPath: ...}
+//     config in repoDir → {Mode: lintModeGolangciLint, ConfigPath: ...}
 //  4. Otherwise → nil
 func detectLinter(repoDir string) (*lintConfig, error) {
 	if strings.EqualFold(os.Getenv("AGENT_LINT"), "off") {
@@ -177,7 +185,7 @@ func detectLinter(repoDir string) (*lintConfig, error) {
 			return nil, fmt.Errorf("reading Makefile: %w", rerr)
 		}
 		if lintMakeTargetRE.Match(buf[:n]) {
-			return &lintConfig{Mode: "make"}, nil
+			return &lintConfig{Mode: lintModeMake}, nil
 		}
 	}
 
@@ -188,7 +196,7 @@ func detectLinter(repoDir string) (*lintConfig, error) {
 		cfgPath := filepath.Join(repoDir, name)
 		if _, err := os.Stat(cfgPath); err == nil {
 			if _, err := lookPathFn("golangci-lint"); err == nil {
-				return &lintConfig{Mode: "golangci-lint", ConfigPath: cfgPath}, nil
+				return &lintConfig{Mode: lintModeGolangciLint, ConfigPath: cfgPath}, nil
 			}
 			// Config found but binary missing — fall through to nil so
 			// the pipeline skips lint rather than halting.
@@ -200,8 +208,9 @@ func detectLinter(repoDir string) (*lintConfig, error) {
 }
 
 // RunLint runs the target repo's configured linter against repoDir and
-// returns a deterministic CheckResult, using the same bounded-env /
-// capped-output pattern as runGo in checks.go.
+// returns a deterministic CheckResult via the shared runBoundedCmd
+// helper in checks.go, so lint enjoys the same bounded-env,
+// capped-output, and timeout guarantees as go build / go vet.
 //
 // When detectLinter returns nil (no lint workflow found or disabled),
 // RunLint returns Passed: true with a sentinel output string so that
@@ -220,68 +229,13 @@ func RunLint(ctx context.Context, repoDir string) (*CheckResult, error) {
 		}, nil
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
-	defer cancel()
-
-	var cmd *exec.Cmd
 	switch cfg.Mode {
-	case "make":
-		cmd = exec.CommandContext(ctx, "make", "lint")
-	case "golangci-lint":
-		cmd = exec.CommandContext(ctx, "golangci-lint", "run", "--out-format=line-number", "./...")
+	case lintModeMake:
+		return runBoundedCmd(ctx, repoDir, "make lint", "make", "lint")
+	case lintModeGolangciLint:
+		return runBoundedCmd(ctx, repoDir, "golangci-lint run",
+			"golangci-lint", "run", "--out-format=line-number", "./...")
 	default:
 		return nil, fmt.Errorf("unknown lint mode %q", cfg.Mode)
 	}
-	cmd.Dir = repoDir
-	cmd.Env = []string{
-		"PATH=" + os.Getenv("PATH"),
-		"HOME=" + os.Getenv("HOME"),
-		"GOPATH=" + os.Getenv("GOPATH"),
-		"GOROOT=" + os.Getenv("GOROOT"),
-		"TMPDIR=" + os.TempDir(),
-		"GOFLAGS=-mod=readonly",
-		"GOWORK=off",
-	}
-
-	stdout := &cappedBuffer{cap: maxCheckOutput}
-	stderr := &cappedBuffer{cap: maxCheckOutput}
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-
-	runErr := cmd.Run()
-
-	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return nil, fmt.Errorf("%s lint timed out after %s", cfg.Mode, checkTimeout)
-	}
-
-	exitCode := 0
-	if runErr != nil {
-		var exitErr *exec.ExitError
-		if errors.As(runErr, &exitErr) {
-			exitCode = exitErr.ExitCode()
-		} else {
-			return nil, fmt.Errorf("running %s lint: %w", cfg.Mode, runErr)
-		}
-	}
-
-	output := stdout.String()
-	if stderr.Len() > 0 {
-		if output != "" {
-			output += "\n"
-		}
-		output += stderr.String()
-	}
-	wasTruncated := stdout.Truncated() || stderr.Truncated() || len(output) > maxCheckOutput
-	if len(output) > maxCheckOutput {
-		output = output[:maxCheckOutput]
-	}
-	if wasTruncated {
-		output += "\n... (truncated)"
-	}
-
-	return &CheckResult{
-		Passed:   exitCode == 0,
-		ExitCode: exitCode,
-		Output:   output,
-	}, nil
 }
