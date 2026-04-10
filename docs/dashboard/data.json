@@ -1,6 +1,39 @@
 {
-  "updated_at": "2026-04-10T16:06:34Z",
+  "updated_at": "2026-04-10T21:57:32Z",
   "runs": [
+    {
+      "budget_exceeded": false,
+      "cache_creation_tokens": 22081,
+      "cache_read_tokens": 212895,
+      "code_review": {
+        "approved": false,
+        "build_passed": true,
+        "category": "lint",
+        "cost_usd": 0,
+        "input_tokens": 0,
+        "lint_errors_dropped": 0,
+        "lint_errors_kept": 0,
+        "lint_output": "golangci-lint run\n\nmake: golangci-lint: No such file or directory\nmake: *** [Makefile:41: lint] Error 127\n",
+        "output_tokens": 0,
+        "retried": true,
+        "semantic_result": "",
+        "summary": "lint failed with unclassifiable output",
+        "vet_passed": true
+      },
+      "estimated_cost_usd": 0.644749,
+      "input_tokens": 496114,
+      "issue_number": 1268,
+      "issue_title": "Write a guide about embedding Conduit",
+      "iterations": 30,
+      "model": "claude-haiku-4-5-20251001",
+      "output_tokens": 29727,
+      "plan_chars": 21494,
+      "summary": "Let me check the status more directly:",
+      "timestamp": "2026-04-10T21:57:08Z",
+      "run_id": 24265771321,
+      "status": "failure",
+      "duration_seconds": 441
+    },
     {
       "budget_exceeded": false,
       "cache_creation_tokens": 24123,
