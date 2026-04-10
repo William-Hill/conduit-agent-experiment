@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os/exec"
 	"strings"
 	"time"
@@ -82,6 +83,10 @@ type llmVerdict struct {
 // reviewSemantics is a package var so tests can replace it with a stub.
 // Default is the real Gemini Flash call in callGeminiForReview.
 var reviewSemantics = callGeminiForReview
+
+// runLintFn is a package var so tests can replace it with a stub.
+// Default is the real RunLint implementation in linter.go.
+var runLintFn = RunLint
 
 // callGeminiForReview makes a single gemini-2.5-flash call with the
 // system prompt and user prompt, parses the JSON response, and returns
@@ -175,13 +180,68 @@ func Review(
 		return verdict, nil
 	}
 
-	// 3. Collect the diff (including untracked files via `git add -N .`).
-	diff, files, err := collectDiff(ctx, repoDir)
+	// 3. Collect the changed-file set (also stages untracked files via
+	// `git add -N .` so the subsequent diff sees them).
+	files, err := collectChangedFiles(ctx, repoDir)
+	if err != nil {
+		return nil, fmt.Errorf("collecting changed files: %w", err)
+	}
+
+	// 4. Target-repo linter. Filters errors by changed files so
+	// pre-existing lint debt in the target repo cannot block the
+	// pipeline on code we did not touch. Fails closed when the
+	// output cannot be safely classified (unparseable format, parser
+	// cap hit, or runner-level truncation) so a silent bypass is
+	// impossible.
+	log.Printf("Running target-repo linter...")
+	lint, err := runLintFn(ctx, repoDir)
+	if err != nil {
+		return nil, fmt.Errorf("running lint: %w", err)
+	}
+	verdict.LintOutput = lint.Output
+	if !lint.Passed {
+		kept, dropped, parserTruncated := filterLintErrors(lint.Output, repoDir, files)
+		verdict.LintErrorsKept = len(kept)
+		verdict.LintErrorsDropped = dropped
+
+		if len(kept) > 0 {
+			verdict.Approved = false
+			verdict.Category = "lint"
+			verdict.Summary = fmt.Sprintf("%d lint error(s) in changed files", len(kept))
+			verdict.Feedback = formatLintFeedback(kept)
+			return verdict, nil
+		}
+
+		// Fail closed when we cannot trust the advisory-pass conclusion:
+		// - dropped == 0 means zero lines matched the regex (unparseable
+		//   format, Makefile tooling error, ANSI codes, etc.)
+		// - parserTruncated means the parser stopped at lintParseCap and
+		//   there may be unseen changed-file errors beyond the cap
+		// - the "... (truncated)" sentinel means runBoundedCmd capped
+		//   the raw output at 16 KiB and there may be unseen errors
+		//   beyond the cap
+		outputTruncated := strings.Contains(lint.Output, "... (truncated)")
+		if dropped == 0 || parserTruncated || outputTruncated {
+			verdict.Approved = false
+			verdict.Category = "lint"
+			verdict.Summary = "lint failed with unclassifiable output"
+			verdict.Feedback = formatLintRawFeedback(lint.Output)
+			return verdict, nil
+		}
+
+		// Safe advisory pass: parser read the full output, at least one
+		// error was parsed, and none of them touched our changed files.
+		log.Printf("Lint advisory pass: %d error(s) reported but all in unchanged files (pre-existing debt)", dropped)
+	}
+	log.Printf("Lint check: passed=%v kept=%d dropped=%d", lint.Passed, verdict.LintErrorsKept, verdict.LintErrorsDropped)
+
+	// 5. Collect the unified diff for the semantic reviewer.
+	diff, err := collectDiff(ctx, repoDir)
 	if err != nil {
 		return nil, fmt.Errorf("collecting diff: %w", err)
 	}
 
-	// 4. Semantic LLM review.
+	// 6. Semantic LLM review.
 	prompt := buildReviewPrompt(issue, plan, dossier, diff, files)
 	llmResult, inTokens, outTokens, err := reviewSemantics(ctx, geminiKey, prompt)
 	if err != nil {
@@ -206,21 +266,70 @@ func Review(
 	return verdict, nil
 }
 
-// collectDiff runs `git add -N .` followed by `git diff HEAD` to produce
-// a unified diff that includes both modified and untracked files. It
-// also returns the list of touched files parsed from `git status --porcelain`.
+// collectChangedFiles stages untracked files via `git add -N .` and
+// returns the list of touched files parsed from `git status --porcelain`.
+// Runs under a shared gitTimeout so a stuck git index or hung subprocess
+// cannot block the pipeline indefinitely.
 //
-// All three git commands share a single gitTimeout bound so a stuck
-// git index or hung subprocess cannot block the pipeline indefinitely.
-func collectDiff(ctx context.Context, repoDir string) (string, []string, error) {
+// `git add -N .` only records intent-to-add — it does not modify file
+// contents — so calling this multiple times is safe and idempotent.
+func collectChangedFiles(ctx context.Context, repoDir string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
 	defer cancel()
 
 	addCmd := exec.CommandContext(ctx, "git", "add", "-N", ".")
 	addCmd.Dir = repoDir
 	if out, err := addCmd.CombinedOutput(); err != nil {
-		return "", nil, fmt.Errorf("git add -N: %w\n%s", err, out)
+		return nil, fmt.Errorf("git add -N: %w\n%s", err, out)
 	}
+
+	statusCmd := exec.CommandContext(ctx, "git", "status", "--porcelain")
+	statusCmd.Dir = repoDir
+	statusOut, err := statusCmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git status: %w", err)
+	}
+	var files []string
+	for _, line := range strings.Split(strings.TrimRight(string(statusOut), "\n"), "\n") {
+		// Porcelain v1 lines are "XY PATH" or "XY ORIG -> PATH" for
+		// renames. X and Y are single status chars and there is always
+		// exactly one space between them and the path, so the path
+		// starts at byte 3. Using a byte slice (rather than strings.Fields)
+		// preserves filenames that contain spaces — Fields would shatter
+		// "M  some file.go" into ["M", "some", "file.go"] and the real
+		// path "some file.go" would be lost.
+		//
+		// Git quotes paths that contain special characters (including
+		// spaces) in C-string double-quote syntax. We strip those
+		// surrounding quotes so the path matches the real filename.
+		if len(line) < 4 {
+			continue
+		}
+		path := line[3:]
+		if idx := strings.LastIndex(path, " -> "); idx >= 0 {
+			// Rename entry: take the destination side.
+			path = path[idx+4:]
+		}
+		// Strip surrounding double-quotes added by git for paths with
+		// special characters (spaces, non-ASCII, etc.).
+		if len(path) >= 2 && path[0] == '"' && path[len(path)-1] == '"' {
+			path = path[1 : len(path)-1]
+		}
+		if path != "" {
+			files = append(files, path)
+		}
+	}
+	return files, nil
+}
+
+// collectDiff runs `git diff HEAD` in repoDir and returns the unified
+// diff, truncated to maxDiffBytes. Callers must invoke collectChangedFiles
+// first (within the same Review() pass) so untracked files are staged
+// with `git add -N .` before the diff runs — otherwise new files would
+// be silently omitted from the diff passed to the semantic reviewer.
+func collectDiff(ctx context.Context, repoDir string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
+	defer cancel()
 
 	diffCmd := exec.CommandContext(ctx, "git", "diff", "HEAD")
 	diffCmd.Dir = repoDir
@@ -229,29 +338,11 @@ func collectDiff(ctx context.Context, repoDir string) (string, []string, error) 
 	var diffStderr bytes.Buffer
 	diffCmd.Stderr = &diffStderr
 	if err := diffCmd.Run(); err != nil {
-		return "", nil, fmt.Errorf("git diff HEAD: %w\n%s", err, diffStderr.String())
+		return "", fmt.Errorf("git diff HEAD: %w\n%s", err, diffStderr.String())
 	}
 	diff := diffOut.String()
 	if len(diff) > maxDiffBytes {
 		diff = diff[:maxDiffBytes] + "\n... (diff truncated)"
 	}
-
-	statusCmd := exec.CommandContext(ctx, "git", "status", "--porcelain")
-	statusCmd.Dir = repoDir
-	statusOut, err := statusCmd.Output()
-	if err != nil {
-		return "", nil, fmt.Errorf("git status: %w", err)
-	}
-	var files []string
-	for _, line := range strings.Split(strings.TrimRight(string(statusOut), "\n"), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		parts := strings.Fields(line)
-		if len(parts) >= 2 {
-			files = append(files, parts[len(parts)-1])
-		}
-	}
-	return diff, files, nil
+	return diff, nil
 }

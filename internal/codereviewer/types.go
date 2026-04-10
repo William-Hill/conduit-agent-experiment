@@ -13,7 +13,7 @@ package codereviewer
 type Verdict struct {
 	Approved bool `json:"approved"`
 	// Category indicates which gate failed, if any.
-	// One of: "build", "vet", "semantic", "".
+	// One of: "build", "vet", "lint", "semantic", "".
 	Category string `json:"category,omitempty"`
 	// Summary is a human-readable one-liner for logs and dashboards.
 	Summary string `json:"summary"`
@@ -25,7 +25,14 @@ type Verdict struct {
 	// Diagnostics — populated even on approval, for the artifact.
 	BuildOutput    string `json:"build_output,omitempty"`
 	VetOutput      string `json:"vet_output,omitempty"`
+	LintOutput     string `json:"lint_output,omitempty"`
 	SemanticResult string `json:"semantic_result,omitempty"`
+
+	// Lint telemetry — populated when RunLint ran. Kept counts errors in
+	// changed files (actionable); Dropped counts parsed errors in unchanged
+	// files (treated as pre-existing debt and ignored for retry decisions).
+	LintErrorsKept    int `json:"lint_errors_kept"`
+	LintErrorsDropped int `json:"lint_errors_dropped"`
 
 	// Cost telemetry for the semantic LLM call (zero if skipped).
 	InputTokens  int     `json:"input_tokens"`
