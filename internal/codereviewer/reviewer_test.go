@@ -2,10 +2,12 @@ package codereviewer
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // writeTestModule creates a temp dir with go.mod and main.go, returning
@@ -87,5 +89,46 @@ func main() {
 	}
 	if vet.ExitCode == 0 {
 		t.Errorf("expected non-zero ExitCode")
+	}
+}
+
+func TestRunBuild_Timeout(t *testing.T) {
+	dir := writeTestModule(t, "package main\n\nfunc main() {}\n")
+	// Deadline in the past → exec will be cancelled before it can run.
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
+	defer cancel()
+	time.Sleep(time.Millisecond) // ensure deadline has elapsed
+
+	_, err := RunBuild(ctx, dir)
+	if err == nil {
+		t.Error("expected error from expired context, got nil")
+	}
+}
+
+func TestRunBuild_OutputTruncation(t *testing.T) {
+	// Produce enough vet errors to exceed the 16 KiB cap.
+	// fmt.Printf with wrong format verb generates many errors (~80 bytes each).
+	// Using RunVet with 5000 lines of the same error → ~450 KiB output.
+	var sb strings.Builder
+	sb.WriteString("package main\n\nimport \"fmt\"\n\nfunc main() {\n")
+	for i := 0; i < 5000; i++ {
+		fmt.Fprintf(&sb, "\tfmt.Printf(\"%%d\", \"not a number\")  // line %d\n", i)
+	}
+	sb.WriteString("}\n")
+
+	dir := writeTestModule(t, sb.String())
+	res, err := RunVet(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("RunVet error: %v", err)
+	}
+	if res.Passed {
+		t.Fatal("expected vet to fail")
+	}
+	// Allow small overhead for the "... (truncated)" suffix.
+	if len(res.Output) > maxCheckOutput+64 {
+		t.Errorf("output length %d exceeds cap %d", len(res.Output), maxCheckOutput+64)
+	}
+	if !strings.Contains(res.Output, "truncated") {
+		t.Error("expected output to contain truncation marker")
 	}
 }
