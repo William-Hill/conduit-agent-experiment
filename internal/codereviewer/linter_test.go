@@ -1,6 +1,7 @@
 package codereviewer
 
 import (
+	"context"
 	"os/exec"
 	"path/filepath"
 	"reflect"
@@ -225,4 +226,43 @@ func TestDetectLinter(t *testing.T) {
 			t.Errorf("expected nil (lint target beyond 64 KiB cap), got %+v", cfg)
 		}
 	})
+}
+
+func TestRunLint_NoConfigIsNoop(t *testing.T) {
+	dir := t.TempDir()
+	// Stub lookPathFn so no binary is considered present.
+	t.Cleanup(func() { lookPathFn = exec.LookPath })
+	lookPathFn = func(string) (string, error) { return "", exec.ErrNotFound }
+
+	res, err := RunLint(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("RunLint error: %v", err)
+	}
+	if !res.Passed {
+		t.Errorf("expected Passed=true for no-op, got false")
+	}
+	if res.ExitCode != 0 {
+		t.Errorf("expected ExitCode=0, got %d", res.ExitCode)
+	}
+	if !strings.Contains(res.Output, "no configuration detected") {
+		t.Errorf("expected no-op sentinel in output, got %q", res.Output)
+	}
+}
+
+func TestRunLint_AgentLintOff(t *testing.T) {
+	dir := t.TempDir()
+	// Even with a real lint target, AGENT_LINT=off wins.
+	mustWrite(t, filepath.Join(dir, "Makefile"), "lint:\n\techo should-not-run\n")
+	t.Setenv("AGENT_LINT", "off")
+
+	res, err := RunLint(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("RunLint error: %v", err)
+	}
+	if !res.Passed {
+		t.Errorf("expected Passed=true when disabled, got false")
+	}
+	if !strings.Contains(res.Output, "no configuration detected") {
+		t.Errorf("expected no-op sentinel, got %q", res.Output)
+	}
 }

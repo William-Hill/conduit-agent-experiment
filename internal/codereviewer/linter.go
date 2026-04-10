@@ -1,6 +1,8 @@
 package codereviewer
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -185,4 +187,91 @@ func detectLinter(repoDir string) (*lintConfig, error) {
 	}
 
 	return nil, nil
+}
+
+// RunLint runs the target repo's configured linter against repoDir and
+// returns a deterministic CheckResult, using the same bounded-env /
+// capped-output pattern as runGo in checks.go.
+//
+// When detectLinter returns nil (no lint workflow found or disabled),
+// RunLint returns Passed: true with a sentinel output string so that
+// Review() can distinguish "lint ran and passed" from "lint was not
+// configured" without needing a second return value.
+func RunLint(ctx context.Context, repoDir string) (*CheckResult, error) {
+	cfg, err := detectLinter(repoDir)
+	if err != nil {
+		return nil, fmt.Errorf("detecting linter: %w", err)
+	}
+	if cfg == nil {
+		return &CheckResult{
+			Passed:   true,
+			ExitCode: 0,
+			Output:   "lint: no configuration detected, skipped",
+		}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
+	defer cancel()
+
+	var cmd *exec.Cmd
+	switch cfg.Mode {
+	case "make":
+		cmd = exec.CommandContext(ctx, "make", "lint")
+	case "golangci-lint":
+		cmd = exec.CommandContext(ctx, "golangci-lint", "run", "--out-format=line-number", "./...")
+	default:
+		return nil, fmt.Errorf("unknown lint mode %q", cfg.Mode)
+	}
+	cmd.Dir = repoDir
+	cmd.Env = []string{
+		"PATH=" + os.Getenv("PATH"),
+		"HOME=" + os.Getenv("HOME"),
+		"GOPATH=" + os.Getenv("GOPATH"),
+		"GOROOT=" + os.Getenv("GOROOT"),
+		"TMPDIR=" + os.TempDir(),
+		"GOFLAGS=-mod=readonly",
+		"GOWORK=off",
+	}
+
+	stdout := &cappedBuffer{cap: maxCheckOutput}
+	stderr := &cappedBuffer{cap: maxCheckOutput}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+
+	runErr := cmd.Run()
+
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return nil, fmt.Errorf("%s lint timed out after %s", cfg.Mode, checkTimeout)
+	}
+
+	exitCode := 0
+	if runErr != nil {
+		var exitErr *exec.ExitError
+		if errors.As(runErr, &exitErr) {
+			exitCode = exitErr.ExitCode()
+		} else {
+			return nil, fmt.Errorf("running %s lint: %w", cfg.Mode, runErr)
+		}
+	}
+
+	output := stdout.String()
+	if stderr.Len() > 0 {
+		if output != "" {
+			output += "\n"
+		}
+		output += stderr.String()
+	}
+	wasTruncated := stdout.Truncated() || stderr.Truncated() || len(output) > maxCheckOutput
+	if len(output) > maxCheckOutput {
+		output = output[:maxCheckOutput]
+	}
+	if wasTruncated {
+		output += "\n... (truncated)"
+	}
+
+	return &CheckResult{
+		Passed:   exitCode == 0,
+		ExitCode: exitCode,
+		Output:   output,
+	}, nil
 }
