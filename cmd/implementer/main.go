@@ -215,7 +215,7 @@ func main() {
 	// Write run artifacts for CI (GitHub Actions artifact upload)
 	artifactDir := os.Getenv("IMPL_ARTIFACT_DIR")
 	if artifactDir != "" {
-		writeRunArtifacts(artifactDir, issue, result, modelName, plan)
+		writeRunArtifacts(artifactDir, issue, result, backend.Name(), modelName, plan)
 	}
 
 	if result.BudgetExceeded {
@@ -302,7 +302,7 @@ func main() {
 					firstRunCost, implMaxCost)
 				result.BudgetExceeded = true
 				if artifactDir != "" {
-					writeRunArtifacts(artifactDir, issue, result, modelName, plan)
+					writeRunArtifacts(artifactDir, issue, result, backend.Name(), modelName, plan)
 				}
 				writeCodeReviewArtifact(artifactDir, verdict, true)
 				os.RemoveAll(repoDir)
@@ -341,7 +341,7 @@ func main() {
 		// iterations / token counts / estimated_cost_usd reflect the
 		// retry, not the stale first-run values written at L188.
 		if artifactDir != "" {
-			writeRunArtifacts(artifactDir, issue, result, modelName, plan)
+			writeRunArtifacts(artifactDir, issue, result, backend.Name(), modelName, plan)
 		}
 
 		if result.BudgetExceeded {
@@ -636,13 +636,14 @@ func extractPRNumber(prURL string) int {
 
 // writeRunArtifacts writes run metadata and cost info to the artifact directory
 // for collection by GitHub Actions.
-func writeRunArtifacts(dir string, issue *triage.RankedIssue, result *implementer.Result, modelName string, plan *planner.ImplementationPlan) {
+func writeRunArtifacts(dir string, issue *triage.RankedIssue, result *implementer.Result, backendName, modelName string, plan *planner.ImplementationPlan) {
 	model := modelName
 	if model == "" {
 		model = "claude-haiku-4-5-20251001"
 	}
 
 	summary := map[string]any{
+		"backend":               backendName,
 		"issue_number":          issue.Number,
 		"issue_title":           issue.Title,
 		"model":                 model,
