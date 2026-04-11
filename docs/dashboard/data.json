@@ -1,6 +1,39 @@
 {
-  "updated_at": "2026-04-11T15:45:04Z",
+  "updated_at": "2026-04-11T21:47:08Z",
   "runs": [
+    {
+      "budget_exceeded": false,
+      "cache_creation_tokens": 25790,
+      "cache_read_tokens": 386850,
+      "code_review": {
+        "approved": false,
+        "build_passed": true,
+        "category": "vet",
+        "cost_usd": 0,
+        "input_tokens": 0,
+        "lint_errors_dropped": 0,
+        "lint_errors_kept": 0,
+        "lint_output": "",
+        "output_tokens": 0,
+        "retried": true,
+        "semantic_result": "",
+        "summary": "go vet failed",
+        "vet_passed": false
+      },
+      "estimated_cost_usd": 0.506248,
+      "input_tokens": 385508,
+      "issue_number": 1268,
+      "issue_title": "Write a guide about embedding Conduit",
+      "iterations": 30,
+      "model": "claude-haiku-4-5-20251001",
+      "output_tokens": 24148,
+      "plan_chars": 38775,
+      "summary": "Now I understand the correct API. Let me also check the log level constants:",
+      "timestamp": "2026-04-11T21:46:37Z",
+      "run_id": 24292234801,
+      "status": "failure",
+      "duration_seconds": 313
+    },
     {
       "budget_exceeded": false,
       "cache_creation_tokens": 18269,
