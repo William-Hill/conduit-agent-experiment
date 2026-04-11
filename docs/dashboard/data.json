@@ -1,6 +1,39 @@
 {
-  "updated_at": "2026-04-11T09:56:35Z",
+  "updated_at": "2026-04-11T15:45:04Z",
   "runs": [
+    {
+      "budget_exceeded": false,
+      "cache_creation_tokens": 18269,
+      "cache_read_tokens": 274035,
+      "code_review": {
+        "approved": false,
+        "build_passed": false,
+        "category": "build",
+        "cost_usd": 0,
+        "input_tokens": 0,
+        "lint_errors_dropped": 0,
+        "lint_errors_kept": 0,
+        "lint_output": "",
+        "output_tokens": 0,
+        "retried": true,
+        "semantic_result": "",
+        "summary": "go build failed",
+        "vet_passed": false
+      },
+      "estimated_cost_usd": 0.470404,
+      "input_tokens": 391269,
+      "issue_number": 1268,
+      "issue_title": "Write a guide about embedding Conduit",
+      "iterations": 30,
+      "model": "claude-haiku-4-5-20251001",
+      "output_tokens": 15827,
+      "plan_chars": 25496,
+      "summary": "Let me read the processor service:",
+      "timestamp": "2026-04-11T15:44:46Z",
+      "run_id": 24285833072,
+      "status": "failure",
+      "duration_seconds": 209
+    },
     {
       "budget_exceeded": false,
       "cache_creation_tokens": 23015,
