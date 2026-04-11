@@ -313,8 +313,13 @@ func main() {
 				retryBudget, firstRunCost, implMaxCost)
 		}
 
-		retryResult, rerr := implementer.RunAgent(ctx, anthropicKey, modelName,
-			repoDir, retryPlan, maxIter, retryBudget)
+		retryResult, rerr := backend.Run(ctx, implementer.RunParams{
+			RepoDir:       repoDir,
+			Plan:          retryPlan,
+			TargetFiles:   targetFiles,
+			MaxIterations: maxIter,
+			MaxCost:       retryBudget,
+		})
 		if rerr != nil {
 			writeCodeReviewArtifact(artifactDir, verdict, true)
 			log.Fatalf("implementer retry failed: %v", rerr)
@@ -464,7 +469,13 @@ func main() {
 			prompt := responder.BuildFixPrompt(actionable)
 			fixPlan := &planner.ImplementationPlan{Markdown: prompt}
 
-			fixResult, err := implementer.RunAgent(ctx, anthropicKey, modelName, repoDir, fixPlan, maxIter, implMaxCost)
+			fixResult, err := backend.Run(ctx, implementer.RunParams{
+				RepoDir:       repoDir,
+				Plan:          fixPlan,
+				TargetFiles:   targetFiles,
+				MaxIterations: maxIter,
+				MaxCost:       implMaxCost,
+			})
 			if err != nil {
 				log.Printf("[HITL] Fix agent failed: %v", err)
 				continue
