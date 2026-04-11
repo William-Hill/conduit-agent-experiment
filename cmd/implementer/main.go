@@ -20,6 +20,7 @@ import (
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/github"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/hitl"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/implementer"
+	"github.com/mjhilldigital/conduit-agent-experiment/internal/ingest"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/planner"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/responder"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/triage"
@@ -215,7 +216,7 @@ func main() {
 	// Write run artifacts for CI (GitHub Actions artifact upload)
 	artifactDir := os.Getenv("IMPL_ARTIFACT_DIR")
 	if artifactDir != "" {
-		writeRunArtifacts(artifactDir, issue, result, backend.Name(), modelName, plan)
+		writeRunArtifacts(artifactDir, issue, result, backend.Name(), modelName, plan, countHallucinationsInRepo(ctx, repoDir))
 	}
 
 	if result.BudgetExceeded {
@@ -302,7 +303,7 @@ func main() {
 					firstRunCost, implMaxCost)
 				result.BudgetExceeded = true
 				if artifactDir != "" {
-					writeRunArtifacts(artifactDir, issue, result, backend.Name(), modelName, plan)
+					writeRunArtifacts(artifactDir, issue, result, backend.Name(), modelName, plan, countHallucinationsInRepo(ctx, repoDir))
 				}
 				writeCodeReviewArtifact(artifactDir, verdict, true)
 				os.RemoveAll(repoDir)
@@ -341,7 +342,7 @@ func main() {
 		// iterations / token counts / estimated_cost_usd reflect the
 		// retry, not the stale first-run values written at L188.
 		if artifactDir != "" {
-			writeRunArtifacts(artifactDir, issue, result, backend.Name(), modelName, plan)
+			writeRunArtifacts(artifactDir, issue, result, backend.Name(), modelName, plan, countHallucinationsInRepo(ctx, repoDir))
 		}
 
 		if result.BudgetExceeded {
@@ -636,15 +637,16 @@ func extractPRNumber(prURL string) int {
 
 // writeRunArtifacts writes run metadata and cost info to the artifact directory
 // for collection by GitHub Actions.
-func writeRunArtifacts(dir string, issue *triage.RankedIssue, result *implementer.Result, backendName, modelName string, plan *planner.ImplementationPlan) {
+func writeRunArtifacts(dir string, issue *triage.RankedIssue, result *implementer.Result, backendName, modelName string, plan *planner.ImplementationPlan, hallucinatedSymbols int) {
 	model := modelName
 	if model == "" {
 		model = "claude-haiku-4-5-20251001"
 	}
 
 	summary := map[string]any{
-		"backend":               backendName,
-		"issue_number":          issue.Number,
+		"backend":              backendName,
+		"hallucinated_symbols": hallucinatedSymbols,
+		"issue_number":         issue.Number,
 		"issue_title":           issue.Title,
 		"model":                 model,
 		"iterations":            result.Iterations,
@@ -672,6 +674,26 @@ func writeRunArtifacts(dir string, issue *triage.RankedIssue, result *implemente
 		return
 	}
 	log.Printf("Artifacts written to %s", dir)
+}
+
+// countHallucinationsInRepo computes the hallucinated-symbol metric for the
+// cloned target repo by diffing against HEAD and checking each added-line
+// identifier against a fresh symbol index built from the repo. Returns 0 on
+// any error — the metric is best-effort and must not block artifact writes.
+func countHallucinationsInRepo(ctx context.Context, repoDir string) int {
+	diffCmd := exec.CommandContext(ctx, "git", "diff", "HEAD")
+	diffCmd.Dir = repoDir
+	diffBytes, err := diffCmd.Output()
+	if err != nil {
+		log.Printf("hallucination metric: git diff failed (continuing): %v", err)
+		return 0
+	}
+	idx, err := ingest.BuildSymbolIndex(repoDir)
+	if err != nil {
+		log.Printf("hallucination metric: symbol index build failed (continuing): %v", err)
+		return 0
+	}
+	return implementer.CountHallucinatedSymbols(string(diffBytes), idx)
 }
 
 // appendPRURL updates the run summary artifact with the PR URL after creation.
