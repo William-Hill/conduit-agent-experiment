@@ -29,9 +29,6 @@ func main() {
 	ctx := context.Background()
 
 	anthropicKey := os.Getenv("ANTHROPIC_API_KEY")
-	if anthropicKey == "" {
-		log.Fatal("ANTHROPIC_API_KEY environment variable is required")
-	}
 
 	geminiKey := os.Getenv("GOOGLE_API_KEY")
 	if geminiKey == "" {
@@ -193,6 +190,9 @@ func main() {
 		aiderModel := os.Getenv("IMPL_AIDER_MODEL") // may be empty → backend default
 		backend = implementer.NewAiderBackend(openrouterKey, aiderModel, "")
 	case "", "anthropic":
+		if anthropicKey == "" {
+			log.Fatal("anthropic backend requires ANTHROPIC_API_KEY (set IMPL_BACKEND=aider to use the Aider backend instead)")
+		}
 		backend = implementer.NewAnthropicBackend(anthropicKey, modelName)
 	default:
 		log.Fatalf("unknown IMPL_BACKEND=%q (want 'anthropic' or 'aider')", backendName)
@@ -269,7 +269,7 @@ func main() {
 	if !verdict.Approved {
 		reviewRetried = true
 		log.Printf("Code review rejected: %s", verdict.Feedback)
-		log.Printf("Retrying implementer with reviewer feedback...")
+		log.Printf("Retrying implementer [%s] with reviewer feedback...", backend.Name())
 
 		retryPlan := &planner.ImplementationPlan{
 			Markdown: plan.Markdown +
@@ -465,7 +465,7 @@ func main() {
 				break
 			}
 
-			log.Printf("[HITL] Found %d actionable comments, running fix agent...", len(actionable))
+			log.Printf("[HITL] Found %d actionable comments, running fix agent [%s]...", len(actionable), backend.Name())
 			prompt := responder.BuildFixPrompt(actionable)
 			fixPlan := &planner.ImplementationPlan{Markdown: prompt}
 
