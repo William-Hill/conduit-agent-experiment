@@ -39,16 +39,22 @@ var stdlibPackages = map[string]bool{
 // a letter or underscore.
 var identRe = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_]*`)
 
-// qualifiedRe matches stdlib-qualified selectors like fmt.Println or http.StatusOK.
-// We pre-collect these so their right-hand sides are not counted as hallucinations.
-var qualifiedRe = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*`)
-
 // CountHallucinatedSymbols counts identifiers in added diff lines that do
-// NOT exist in the given symbol index. Stdlib package selectors, Go keywords,
-// builtins, and identifiers shorter than 3 characters are ignored.
+// NOT exist in the given symbol index. To reduce noise the counter skips:
 //
-// The metric is approximate — the goal is A/B comparison, not absolute
-// correctness. Both arms are scored the same way.
+//   - Go keywords and builtins (via goKeywords)
+//   - Stdlib package names when they appear bare (via stdlibPackages)
+//   - The right-hand side of any selector expression (fmt.Println, w.Close,
+//     obj.Method) — we cannot resolve these without a type checker, so both
+//     stdlib calls and method calls on local variables are passed over.
+//   - Identifiers shorter than 3 bytes (one-letter vars, two-char aliases
+//     like io, wg, db)
+//   - Identifiers found anywhere in string literals will still be scanned,
+//     which inflates absolute counts but affects both A/B arms equally.
+//
+// The metric is approximate and meant for A/B comparison; the delta between
+// two backends scored the same way is the load-bearing number, not the
+// absolute count.
 func CountHallucinatedSymbols(diff string, idx *ingest.SymbolIndex) int {
 	if idx == nil {
 		return 0
@@ -60,17 +66,15 @@ func CountHallucinatedSymbols(diff string, idx *ingest.SymbolIndex) int {
 			continue
 		}
 		body := line[1:]
-		// Collect identifiers that are the right-hand side of a stdlib-qualified
-		// selector (e.g. "Println" in "fmt.Println"). These should not be flagged.
-		qualifiedSkip := make(map[string]bool)
-		for _, qm := range qualifiedRe.FindAllString(body, -1) {
-			parts := strings.SplitN(qm, ".", 2)
-			if len(parts) == 2 && stdlibPackages[parts[0]] {
-				qualifiedSkip[parts[1]] = true
+		// Walk idents by position so we can skip the RHS of selector
+		// expressions (both pkg.X and obj.X). This avoids a pre-pass
+		// and removes the need to guess which LHSes are "stdlib-like".
+		for _, loc := range identRe.FindAllStringIndex(body, -1) {
+			if loc[0] > 0 && body[loc[0]-1] == '.' {
+				continue // selector RHS — already anchored by the LHS
 			}
-		}
-		for _, ident := range identRe.FindAllString(body, -1) {
-			if len(ident) < 3 || goKeywords[ident] || stdlibPackages[ident] || qualifiedSkip[ident] {
+			ident := body[loc[0]:loc[1]]
+			if len(ident) < 3 || goKeywords[ident] || stdlibPackages[ident] {
 				continue
 			}
 			if seen[ident] {

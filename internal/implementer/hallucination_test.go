@@ -90,3 +90,38 @@ func TestCountHallucinatedSymbols_OnlyAddedLines(t *testing.T) {
 		t.Errorf("removed lines should be ignored, got %d", got)
 	}
 }
+
+func TestCountHallucinatedSymbols_SkipsMethodCallsOnLocalVars(t *testing.T) {
+	// `w.Close()`, `mu.Lock()`, `wg.Done()` — the RHS methods are not in
+	// the index. They should NOT be counted as hallucinations because they
+	// are the right-hand side of a selector; the LHS (local variables) is
+	// what the counter would flag if anything. Since `wg` is 2 chars and
+	// `mu` is 2 chars, they are filtered by the length rule; `w` is 1 char
+	// and also filtered.
+	diff := `
++++ b/foo.go
++func bar() {
++	w.Close()
++	mu.Lock()
++	wg.Done()
++}
+`
+	got := CountHallucinatedSymbols(diff, fakeIndex("bar"))
+	if got != 0 {
+		t.Errorf("got %d hallucinations, want 0 (method calls on local vars should be skipped)", got)
+	}
+}
+
+func TestCountHallucinatedSymbols_StillCatchesBareFunctionCall(t *testing.T) {
+	// A bare call to a function that doesn't exist is still a hallucination.
+	diff := `
++++ b/foo.go
++func bar() {
++	DoesNotExist()
++}
+`
+	got := CountHallucinatedSymbols(diff, fakeIndex("bar"))
+	if got != 1 {
+		t.Errorf("got %d hallucinations, want 1", got)
+	}
+}
