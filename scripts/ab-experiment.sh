@@ -19,7 +19,25 @@
 
 set -euo pipefail
 
+# Fail fast if any required env var is missing — the implementer will
+# surface cryptic errors otherwise.
+required_vars=(ANTHROPIC_API_KEY OPENROUTER_API_KEY GH_TOKEN IMPL_REPO_OWNER IMPL_REPO_NAME IMPL_FORK_OWNER)
+missing=()
+for var in "${required_vars[@]}"; do
+  if [[ -z "${!var:-}" ]]; then
+    missing+=("$var")
+  fi
+done
+if (( ${#missing[@]} > 0 )); then
+  echo "Error: required env vars not set: ${missing[*]}" >&2
+  exit 1
+fi
+
 ITERS="${1:-3}"
+if ! [[ "$ITERS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "Error: iterations must be a positive integer, got: $ITERS" >&2
+  exit 1
+fi
 TASKS=(576 645)  # gh-576 HTTP status codes, gh-645 version constant
 BASE_DIR="data/ab-runs"
 TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -40,7 +58,7 @@ run_one() {
   IMPL_ARTIFACT_DIR="$out_dir" \
     go run ./cmd/implementer 2>&1 | tee "$out_dir/stdout.log" || {
       echo "run failed — continuing"
-      echo "{\"error\":\"run failed\"}" > "$out_dir/run-summary.json"
+      echo '{"error":"run failed"}' > "$out_dir/run-summary.json"
     }
 }
 
