@@ -66,3 +66,17 @@ func TestCalculateCalls(t *testing.T) {
 		t.Errorf("CalculateCalls() = %f, want %f", got, want)
 	}
 }
+
+func TestOpenRouterFreeTierPricing(t *testing.T) {
+	freeModels := []string{
+		"openrouter/qwen/qwen-2.5-coder-32b-instruct:free",
+		"openrouter/deepseek/deepseek-r1:free",
+		"openrouter/meta-llama/llama-3.3-70b-instruct:free",
+	}
+	for _, m := range freeModels {
+		got := Calculate(m, 1_000_000, 1_000_000)
+		if got != 0.0 {
+			t.Errorf("Calculate(%q, 1M, 1M) = %f, want 0.0 (free tier)", m, got)
+		}
+	}
+}
