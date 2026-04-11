@@ -661,7 +661,7 @@ func writeRunArtifacts(dir string, issue *triage.RankedIssue, result *implemente
 	}
 
 	// Estimate cost using the pricing package
-	implCost := cost.Calculate(model, result.InputTokens, result.OutputTokens)
+	implCost := cost.CalculateWithCache(model, result.InputTokens, result.CacheCreationTokens, result.CacheReadTokens, result.OutputTokens)
 	summary["estimated_cost_usd"] = implCost
 
 	data, err := json.MarshalIndent(summary, "", "  ")

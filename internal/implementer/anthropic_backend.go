@@ -10,6 +10,9 @@ import (
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/cost"
 )
 
+// Compile-time assertion that AnthropicBackend satisfies the Backend interface.
+var _ Backend = (*AnthropicBackend)(nil)
+
 // AnthropicBackend is the reference implementer backend — it drives the
 // Anthropic SDK BetaToolRunner with five custom tools against a cloned
 // repository. This is the baseline arm for issue #38's A/B experiment.
