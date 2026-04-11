@@ -174,9 +174,38 @@ func main() {
 	log.Printf("Plan approved")
 
 	// 8. Run implementer agent
-	log.Printf("Running implementer agent (max %d iterations)...", maxIter)
+	backendName := os.Getenv("IMPL_BACKEND") // "", "anthropic", or "aider"
 	implMaxCost := cost.EnvFloat("IMPL_MAX_COST")
-	result, err := implementer.RunAgent(ctx, anthropicKey, modelName, repoDir, plan, maxIter, implMaxCost)
+
+	// Build target file list from the dossier so the Aider backend can scope edits.
+	targetFiles := make([]string, 0, len(dossier.Files))
+	for _, f := range dossier.Files {
+		targetFiles = append(targetFiles, f.Path)
+	}
+
+	var backend implementer.Backend
+	switch backendName {
+	case "aider":
+		openrouterKey := os.Getenv("OPENROUTER_API_KEY")
+		if openrouterKey == "" {
+			log.Fatalf("IMPL_BACKEND=aider requires OPENROUTER_API_KEY")
+		}
+		aiderModel := os.Getenv("IMPL_AIDER_MODEL") // may be empty → backend default
+		backend = implementer.NewAiderBackend(openrouterKey, aiderModel, "")
+	case "", "anthropic":
+		backend = implementer.NewAnthropicBackend(anthropicKey, modelName)
+	default:
+		log.Fatalf("unknown IMPL_BACKEND=%q (want 'anthropic' or 'aider')", backendName)
+	}
+
+	log.Printf("Running implementer agent [%s] (max %d iterations)...", backend.Name(), maxIter)
+	result, err := backend.Run(ctx, implementer.RunParams{
+		RepoDir:       repoDir,
+		Plan:          plan,
+		TargetFiles:   targetFiles,
+		MaxIterations: maxIter,
+		MaxCost:       implMaxCost,
+	})
 	if err != nil {
 		log.Fatalf("agent failed: %v", err)
 	}
