@@ -118,3 +118,57 @@ func TestParseAiderTokenLine(t *testing.T) {
 		}
 	}
 }
+
+func TestAiderBackendRunTakesLastTokenLine(t *testing.T) {
+	tempDir := t.TempDir()
+	// Two Tokens: lines — first is a mid-run sub-total, second is the
+	// session cumulative. We must record the second.
+	fakeOut := `Applied edit.
+Tokens: 500 sent, 100 received. Cost: $0.00 message, $0.00 session.
+Applied edit.
+Tokens: 1.2k sent, 300 received. Cost: $0.00 message, $0.00 session.
+`
+	fakeAider := writeFakeAider(t, tempDir, fakeOut)
+	repoDir := t.TempDir()
+	b := NewAiderBackend("key", "openrouter/qwen/qwen-2.5-coder-32b-instruct:free", fakeAider)
+	plan := &planner.ImplementationPlan{Markdown: "Do it"}
+	result, err := b.Run(context.Background(), RunParams{RepoDir: repoDir, Plan: plan, MaxIterations: 10})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.InputTokens != 1200 {
+		t.Errorf("InputTokens = %d, want 1200 (cumulative, not first sub-total 500)", result.InputTokens)
+	}
+	if result.OutputTokens != 300 {
+		t.Errorf("OutputTokens = %d, want 300 (cumulative, not first sub-total 100)", result.OutputTokens)
+	}
+}
+
+func TestAiderBackendRunNilPlan(t *testing.T) {
+	b := NewAiderBackend("key", "openrouter/qwen/qwen-2.5-coder-32b-instruct:free", "aider")
+	_, err := b.Run(context.Background(), RunParams{RepoDir: t.TempDir(), Plan: nil})
+	if err == nil {
+		t.Fatal("expected error for nil plan")
+	}
+	if !strings.Contains(err.Error(), "nil plan") {
+		t.Errorf("error should mention nil plan, got %q", err.Error())
+	}
+}
+
+func TestTruncateStderrShort(t *testing.T) {
+	if got := truncateStderr("short"); got != "short" {
+		t.Errorf("truncateStderr should pass short strings through, got %q", got)
+	}
+}
+
+func TestTruncateStderrLong(t *testing.T) {
+	big := strings.Repeat("x", 8000)
+	got := truncateStderr(big)
+	if !strings.HasPrefix(got, "...(truncated)...") {
+		t.Errorf("missing truncation marker: %q", got[:30])
+	}
+	// Should keep the last 4096 bytes plus the marker.
+	if len(got) != len("...(truncated)...")+4096 {
+		t.Errorf("truncated length = %d, want %d", len(got), len("...(truncated)...")+4096)
+	}
+}

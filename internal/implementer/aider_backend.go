@@ -92,15 +92,17 @@ func (b *AiderBackend) Run(ctx context.Context, params RunParams) (*Result, erro
 
 	runErr := cmd.Run()
 	if runErr != nil {
-		return nil, fmt.Errorf("aider run failed: %w: %s", runErr, stderr.String())
+		return nil, fmt.Errorf("aider run failed: %w: %s", runErr, truncateStderr(stderr.String()))
 	}
 
 	out := stdout.String()
 	inputTokens, outputTokens := 0, 0
+	// Aider prints per-turn token lines and a cumulative session total at
+	// the end — scan to the last match so we capture the session total,
+	// not a mid-run sub-total.
 	for _, line := range strings.Split(out, "\n") {
 		if in, o, ok := parseAiderTokens(line); ok {
 			inputTokens, outputTokens = in, o
-			break
 		}
 	}
 
@@ -164,4 +166,18 @@ func extractAiderSummary(out string) string {
 		return out[len(out)-2048:]
 	}
 	return out
+}
+
+// maxStderrBytes caps the stderr size included in error messages to keep
+// logs bounded and to reduce the blast radius if aider (or a downstream
+// provider) echoes partial credentials on auth failure.
+const maxStderrBytes = 4096
+
+// truncateStderr returns the last maxStderrBytes of s with a marker prefix
+// when truncation occurred. Returns s unchanged if already small.
+func truncateStderr(s string) string {
+	if len(s) <= maxStderrBytes {
+		return s
+	}
+	return "...(truncated)..." + s[len(s)-maxStderrBytes:]
 }

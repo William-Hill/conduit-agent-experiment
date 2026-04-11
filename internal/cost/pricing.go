@@ -22,9 +22,9 @@ var modelPrices = map[string]Price{
 	"claude-sonnet-4-6-20250514": {InputPerMTok: 3.00, OutputPerMTok: 15.00},
 	// OpenRouter free tier — 20 req/min, 200 req/day per model.
 	// Tracked as $0 so budget checks pass for free-tier experiments.
-	"openrouter/qwen/qwen-2.5-coder-32b-instruct:free":    {InputPerMTok: 0, OutputPerMTok: 0},
-	"openrouter/deepseek/deepseek-r1:free":                {InputPerMTok: 0, OutputPerMTok: 0},
-	"openrouter/meta-llama/llama-3.3-70b-instruct:free":   {InputPerMTok: 0, OutputPerMTok: 0},
+	"openrouter/qwen/qwen-2.5-coder-32b-instruct:free":  {InputPerMTok: 0, OutputPerMTok: 0},
+	"openrouter/deepseek/deepseek-r1:free":              {InputPerMTok: 0, OutputPerMTok: 0},
+	"openrouter/meta-llama/llama-3.3-70b-instruct:free": {InputPerMTok: 0, OutputPerMTok: 0},
 }
 
 // fallbackPrice is the most expensive known model's pricing, used for unknown
