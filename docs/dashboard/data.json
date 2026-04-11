@@ -1,6 +1,39 @@
 {
-  "updated_at": "2026-04-10T21:57:32Z",
+  "updated_at": "2026-04-11T09:56:35Z",
   "runs": [
+    {
+      "budget_exceeded": false,
+      "cache_creation_tokens": 23015,
+      "cache_read_tokens": 345225,
+      "code_review": {
+        "approved": false,
+        "build_passed": true,
+        "category": "vet",
+        "cost_usd": 0,
+        "input_tokens": 0,
+        "lint_errors_dropped": 0,
+        "lint_errors_kept": 0,
+        "lint_output": "",
+        "output_tokens": 0,
+        "retried": true,
+        "semantic_result": "",
+        "summary": "go vet failed",
+        "vet_passed": false
+      },
+      "estimated_cost_usd": 0.740221,
+      "input_tokens": 631626,
+      "issue_number": 1268,
+      "issue_title": "Write a guide about embedding Conduit",
+      "iterations": 30,
+      "model": "claude-haiku-4-5-20251001",
+      "output_tokens": 21719,
+      "plan_chars": 31587,
+      "summary": "Now let me check processors:",
+      "timestamp": "2026-04-11T09:56:15Z",
+      "run_id": 24279972866,
+      "status": "failure",
+      "duration_seconds": 270
+    },
     {
       "budget_exceeded": false,
       "cache_creation_tokens": 22081,
