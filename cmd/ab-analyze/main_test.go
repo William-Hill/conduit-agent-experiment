@@ -51,3 +51,44 @@ func TestAnalyzePartitionsByBackend(t *testing.T) {
 		t.Errorf("aider success rate = %f, want 0.5", aider.SuccessRate)
 	}
 }
+
+func TestAnalyzeSkipsMalformedJSON(t *testing.T) {
+	root := t.TempDir()
+	// One good summary, one malformed file.
+	writeSummary(t, filepath.Join(root, "good"), "anthropic", 0.05, 5, false)
+	badDir := filepath.Join(root, "bad")
+	if err := os.MkdirAll(badDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(badDir, "run-summary.json"), []byte("not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := analyze(root)
+	if err != nil {
+		t.Fatalf("analyze should not fail on bad JSON: %v", err)
+	}
+	if len(report.Arms) != 1 {
+		t.Errorf("expected 1 arm (the good one), got %d", len(report.Arms))
+	}
+}
+
+func TestAnalyzeSkipsMissingBackendField(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "run1")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Missing backend field entirely.
+	if err := os.WriteFile(filepath.Join(dir, "run-summary.json"),
+		[]byte(`{"estimated_cost_usd":0.05,"iterations":3,"budget_exceeded":false}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	report, err := analyze(root)
+	if err != nil {
+		t.Fatalf("analyze: %v", err)
+	}
+	if len(report.Arms) != 0 {
+		t.Errorf("expected 0 arms (missing backend skipped), got %d", len(report.Arms))
+	}
+}

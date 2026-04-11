@@ -63,15 +63,17 @@ func analyze(root string) (*Report, error) {
 		}
 		body, err := os.ReadFile(path)
 		if err != nil {
-			return err
+			log.Printf("skip %s: read failed: %v", path, err)
+			return nil
 		}
 		var rs runSummary
 		if err := json.Unmarshal(body, &rs); err != nil {
 			log.Printf("skip %s: %v", path, err)
 			return nil
 		}
-		if rs.Error != "" {
-			rs.BudgetExceeded = true // treat errors as failures for success rate
+		if rs.Backend == "" {
+			log.Printf("skip %s: missing backend field (pre-Task 6 run?)", path)
+			return nil
 		}
 		byBackend[rs.Backend] = append(byBackend[rs.Backend], rs)
 		return nil
