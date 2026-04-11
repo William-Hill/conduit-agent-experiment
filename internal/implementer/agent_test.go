@@ -7,6 +7,21 @@ import (
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/planner"
 )
 
+func TestAnthropicBackendName(t *testing.T) {
+	b := NewAnthropicBackend("key", "claude-haiku-4-5-20251001")
+	want := "anthropic:claude-haiku-4-5-20251001"
+	if got := b.Name(); got != want {
+		t.Errorf("Name() = %q, want %q", got, want)
+	}
+}
+
+func TestAnthropicBackendDefaultModel(t *testing.T) {
+	b := NewAnthropicBackend("key", "")
+	if !strings.Contains(b.Name(), "claude-haiku") {
+		t.Errorf("default model should be Haiku, got %q", b.Name())
+	}
+}
+
 func TestExtractTextNil(t *testing.T) {
 	if got := extractText(nil); got != "" {
 		t.Errorf("extractText(nil) = %q, want empty", got)

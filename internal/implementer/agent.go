@@ -2,13 +2,9 @@ package implementer
 
 import (
 	"context"
-	"fmt"
-	"log"
 	"strings"
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
-	"github.com/mjhilldigital/conduit-agent-experiment/internal/cost"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/planner"
 )
 
@@ -34,87 +30,19 @@ type Result struct {
 	BudgetExceeded      bool
 }
 
-// RunAgent executes the implementer agent against a cloned repo.
-// Model can be overridden (e.g. "claude-haiku-4-5-20251001"); defaults to Haiku 4.5.
-// maxCost is the budget cap in USD for this step (0 means no limit).
+// RunAgent is a thin compatibility wrapper that constructs an AnthropicBackend
+// and runs it. New callers should construct a Backend directly via
+// NewAnthropicBackend or NewAiderBackend and call Run with RunParams.
+//
+// Deprecated: prefer Backend.Run with RunParams for new code.
 func RunAgent(ctx context.Context, apiKey, modelName, repoDir string, plan *planner.ImplementationPlan, maxIterations int, maxCost float64) (*Result, error) {
-	if modelName == "" {
-		modelName = string(anthropic.ModelClaudeHaiku4_5)
-	}
-
-	client := anthropic.NewClient(option.WithAPIKey(apiKey))
-
-	tools, err := NewTools(repoDir)
-	if err != nil {
-		return nil, fmt.Errorf("creating tools: %w", err)
-	}
-
-	userPrompt := buildPrompt(plan)
-
-	// Mark system prompt and user context as cacheable so they aren't
-	// re-billed at full input price on every iteration. Cache hits cost
-	// 10% of input price — significant savings over 20+ iterations.
-	cache := anthropic.NewBetaCacheControlEphemeralParam()
-
-	runner := client.Beta.Messages.NewToolRunner(tools, anthropic.BetaToolRunnerParams{
-		BetaMessageNewParams: anthropic.BetaMessageNewParams{
-			Model:     anthropic.Model(modelName),
-			MaxTokens: 16384,
-			System: []anthropic.BetaTextBlockParam{{
-				Text:         systemPrompt,
-				CacheControl: cache,
-			}},
-			Messages: []anthropic.BetaMessageParam{
-				anthropic.NewBetaUserMessage(anthropic.BetaContentBlockParamUnion{
-					OfText: &anthropic.BetaTextBlockParam{
-						Text:         userPrompt,
-						CacheControl: cache,
-					},
-				}),
-			},
-		},
+	backend := NewAnthropicBackend(apiKey, modelName)
+	return backend.Run(ctx, RunParams{
+		RepoDir:       repoDir,
+		Plan:          plan,
 		MaxIterations: maxIterations,
+		MaxCost:       maxCost,
 	})
-
-	var totalInput, totalOutput, totalCacheCreate, totalCacheRead int64
-	var budgetExceeded bool
-
-	var finalMsg *anthropic.BetaMessage
-	for msg, err := range runner.All(ctx) {
-		if err != nil {
-			return nil, fmt.Errorf("agent run failed at iteration %d: %w", runner.IterationCount(), err)
-		}
-		finalMsg = msg
-		totalInput += msg.Usage.InputTokens
-		totalOutput += msg.Usage.OutputTokens
-		totalCacheCreate += msg.Usage.CacheCreationInputTokens
-		totalCacheRead += msg.Usage.CacheReadInputTokens
-		// Log tool calls for progress visibility
-		for _, block := range msg.Content {
-			if block.Type == "tool_use" {
-				log.Printf("  [iter %d] tool: %s", runner.IterationCount(), block.Name)
-			}
-		}
-		// Check budget after each iteration, including cache tokens.
-		if maxCost > 0 {
-			spent := cost.CalculateWithCache(modelName, int(totalInput), int(totalCacheCreate), int(totalCacheRead), int(totalOutput))
-			if spent > maxCost {
-				log.Printf("  implementer budget exceeded: $%.4f > cap $%.4f, stopping", spent, maxCost)
-				budgetExceeded = true
-				break
-			}
-		}
-	}
-
-	return &Result{
-		Summary:             extractText(finalMsg),
-		Iterations:          runner.IterationCount(),
-		InputTokens:         int(totalInput),
-		OutputTokens:        int(totalOutput),
-		CacheCreationTokens: int(totalCacheCreate),
-		CacheReadTokens:     int(totalCacheRead),
-		BudgetExceeded:      budgetExceeded,
-	}, nil
 }
 
 func buildPrompt(plan *planner.ImplementationPlan) string {
