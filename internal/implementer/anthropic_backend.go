@@ -44,6 +44,9 @@ func (b *AnthropicBackend) Run(ctx context.Context, params RunParams) (*Result, 
 
 	userPrompt := buildPrompt(params.Plan)
 
+	// params.TargetFiles is consumed by AiderBackend only; the Anthropic
+	// backend lets the model discover relevant files via its tools.
+
 	// Mark system prompt and user context as cacheable so they aren't
 	// re-billed at full input price on every iteration. Cache hits cost
 	// 10% of input price — significant savings over 20+ iterations.

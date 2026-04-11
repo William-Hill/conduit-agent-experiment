@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	anthropic "github.com/anthropics/anthropic-sdk-go"
 	"github.com/mjhilldigital/conduit-agent-experiment/internal/planner"
 )
 
@@ -17,8 +18,9 @@ func TestAnthropicBackendName(t *testing.T) {
 
 func TestAnthropicBackendDefaultModel(t *testing.T) {
 	b := NewAnthropicBackend("key", "")
-	if !strings.Contains(b.Name(), "claude-haiku") {
-		t.Errorf("default model should be Haiku, got %q", b.Name())
+	want := "anthropic:" + string(anthropic.ModelClaudeHaiku4_5)
+	if got := b.Name(); got != want {
+		t.Errorf("default model Name() = %q, want %q", got, want)
 	}
 }
 
