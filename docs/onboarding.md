@@ -170,6 +170,70 @@ The pipeline needs:
 
 Per-run cost: ~$0.06 (with prompt caching). See [ADR 006](adr/006-pipeline-deployment-github-actions.md) for the full cost analysis.
 
+## Optional: Aider + OpenRouter backend (experimental, issue #38)
+
+The implementer supports a second backend that shells out to the
+[Aider](https://aider.chat/) CLI and routes through
+[OpenRouter](https://openrouter.ai/) — typically against a free-tier model
+such as Qwen3 Coder. This is the experimental arm for the A/B prototype
+tracked in issue #38; it is not yet the default.
+
+### Install Aider
+
+```bash
+# Preferred: pipx (isolated, no global package pollution)
+brew install pipx   # or: python3 -m pip install --user pipx
+pipx install aider-chat
+
+# Verify
+aider --version
+```
+
+### Create an OpenRouter account and key
+
+1. Sign up at https://openrouter.ai/
+2. Create an API key under https://openrouter.ai/keys
+3. Export it alongside your other API keys:
+
+```bash
+export OPENROUTER_API_KEY="sk-or-v1-…"
+```
+
+### Run the pipeline against the Aider backend
+
+```bash
+IMPL_BACKEND=aider \
+IMPL_AIDER_MODEL="openrouter/qwen/qwen-2.5-coder-32b-instruct:free" \
+OPENROUTER_API_KEY="sk-or-v1-…" \
+  go run ./cmd/implementer
+```
+
+`IMPL_AIDER_MODEL` is optional; the backend defaults to a free-tier Qwen
+Coder model. Setting it to an explicit empty string (`IMPL_AIDER_MODEL=`)
+is treated the same as unset and yields the default. Other useful
+free-tier models:
+
+- `openrouter/deepseek/deepseek-r1:free`
+- `openrouter/meta-llama/llama-3.3-70b-instruct:free`
+
+Note: when running the Aider backend, only `OPENROUTER_API_KEY` is
+required — the `ANTHROPIC_API_KEY` check is scoped to the anthropic
+backend so Aider-only experiments don't need an Anthropic key.
+
+### Run the A/B experiment
+
+```bash
+./scripts/ab-experiment.sh 3     # 3 iterations per task per backend
+go run ./cmd/ab-analyze data/ab-runs
+```
+
+### Rate limits
+
+OpenRouter's free tier is capped at **20 requests/minute, 200 requests/day
+per model**. The AiderBackend does not retry or round-robin across models —
+if you hit the cap, wait or switch `IMPL_AIDER_MODEL` to a different free
+model for the next run.
+
 ## Troubleshooting
 
 **"no triage files found"** — Either run `make triage` first, or use `IMPL_ISSUE_NUMBER=576` to bypass triage.
