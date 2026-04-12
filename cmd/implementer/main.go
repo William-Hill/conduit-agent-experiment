@@ -254,13 +254,21 @@ func main() {
 
 	// 9a. Internal code review (re-runs go build/vet externally and
 	// makes one Gemini Flash call for semantic checks). See #33.
-	log.Printf("Running internal code reviewer...")
-	verdict, err := codereviewer.Review(ctx, geminiKey, repoDir, fullIssue, plan, dossier)
-	if err != nil {
-		log.Fatalf("code reviewer failed: %v", err)
+	// Can be bypassed with SKIP_CODE_REVIEW=1 — useful for smoke testing
+	// against repos with pre-existing vet errors (e.g., upstream ConduitIO/conduit).
+	var verdict *codereviewer.Verdict
+	if os.Getenv("SKIP_CODE_REVIEW") == "1" {
+		log.Printf("SKIP_CODE_REVIEW=1 set, skipping internal code reviewer")
+		verdict = &codereviewer.Verdict{Approved: true, Summary: "skipped"}
+	} else {
+		log.Printf("Running internal code reviewer...")
+		verdict, err = codereviewer.Review(ctx, geminiKey, repoDir, fullIssue, plan, dossier)
+		if err != nil {
+			log.Fatalf("code reviewer failed: %v", err)
+		}
+		log.Printf("Code review verdict: approved=%v category=%q summary=%s",
+			verdict.Approved, verdict.Category, verdict.Summary)
 	}
-	log.Printf("Code review verdict: approved=%v category=%q summary=%s",
-		verdict.Approved, verdict.Category, verdict.Summary)
 
 	// reviewRetried records whether the retry path was consumed so the
 	// final artifact write reports it accurately — even on the path
@@ -358,20 +366,25 @@ func main() {
 		// the retry was asked to address and verify it was applied —
 		// otherwise a retry could be approved even if it ignored every
 		// requested fix.
-		verdict, err = codereviewer.Review(ctx, geminiKey, repoDir, fullIssue, retryPlan, dossier)
-		if err != nil {
-			// Write a partial verdict so operators can diagnose why the
-			// pipeline halted after the retry was already consumed.
-			// verdict is nil when Review errors, so construct one here.
-			writeCodeReviewArtifact(artifactDir, &codereviewer.Verdict{
-				Approved: false,
-				Category: "reviewer_error",
-				Summary:  fmt.Sprintf("code reviewer (retry) failed: %v", err),
-			}, true)
-			log.Fatalf("code reviewer (retry) failed: %v", err)
+		if os.Getenv("SKIP_CODE_REVIEW") == "1" {
+			log.Printf("SKIP_CODE_REVIEW=1 set, skipping internal code reviewer (retry)")
+			verdict = &codereviewer.Verdict{Approved: true, Summary: "skipped"}
+		} else {
+			verdict, err = codereviewer.Review(ctx, geminiKey, repoDir, fullIssue, retryPlan, dossier)
+			if err != nil {
+				// Write a partial verdict so operators can diagnose why the
+				// pipeline halted after the retry was already consumed.
+				// verdict is nil when Review errors, so construct one here.
+				writeCodeReviewArtifact(artifactDir, &codereviewer.Verdict{
+					Approved: false,
+					Category: "reviewer_error",
+					Summary:  fmt.Sprintf("code reviewer (retry) failed: %v", err),
+				}, true)
+				log.Fatalf("code reviewer (retry) failed: %v", err)
+			}
+			log.Printf("Retry code review verdict: approved=%v category=%q summary=%s",
+				verdict.Approved, verdict.Category, verdict.Summary)
 		}
-		log.Printf("Retry code review verdict: approved=%v category=%q summary=%s",
-			verdict.Approved, verdict.Category, verdict.Summary)
 		if !verdict.Approved {
 			log.Printf("Code review still rejected after retry: %s", verdict.Feedback)
 			writeCodeReviewArtifact(artifactDir, verdict, true)

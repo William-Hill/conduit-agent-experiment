@@ -72,6 +72,9 @@ func (b *AiderBackend) Run(ctx context.Context, params RunParams) (*Result, erro
 		"--auto-commits",
 		"--no-pretty",
 		"--no-stream",
+		"--disable-playwright", // Aider scrapes URLs from messages by default;
+		// our planner emits URL-heavy markdown which
+		// blows past free-tier context limits.
 		"--model", b.model,
 	}
 	// Resolve target file paths against RepoDir so aider can find them.

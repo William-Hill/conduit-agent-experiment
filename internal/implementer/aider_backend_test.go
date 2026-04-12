@@ -172,3 +172,36 @@ func TestTruncateStderrLong(t *testing.T) {
 		t.Errorf("truncated length = %d, want %d", len(got), len("...(truncated)...")+4096)
 	}
 }
+
+func TestAiderBackendArgsContainDisablePlaywright(t *testing.T) {
+	// Regression test: disable-playwright must always be set to prevent
+	// aider from scraping URLs in the plan markdown and blowing past the
+	// context limit. See issue #38 first-run smoke test findings.
+	tempDir := t.TempDir()
+	// Fake aider that echoes its argv to a file we can inspect.
+	path := filepath.Join(tempDir, "aider")
+	argsLog := filepath.Join(tempDir, "args.log")
+	script := "#!/bin/bash\nfor a in \"$@\"; do echo \"$a\" >> " + argsLog + "; done\necho 'Tokens: 10 sent, 5 received. Cost: $0.00 message, $0.00 session.'\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake aider: %v", err)
+	}
+
+	b := NewAiderBackend("key", "openrouter/x/y:free", path)
+	plan := &planner.ImplementationPlan{Markdown: "Do it"}
+	_, err := b.Run(context.Background(), RunParams{
+		RepoDir:       t.TempDir(),
+		Plan:          plan,
+		MaxIterations: 1,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	logged, err := os.ReadFile(argsLog)
+	if err != nil {
+		t.Fatalf("read args log: %v", err)
+	}
+	if !strings.Contains(string(logged), "--disable-playwright") {
+		t.Errorf("aider args missing --disable-playwright; got: %s", string(logged))
+	}
+}
