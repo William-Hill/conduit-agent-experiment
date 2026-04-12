@@ -64,3 +64,10 @@ func TestResultTokenFields(t *testing.T) {
 		t.Errorf("OutputTokens = %d, want 800", r.OutputTokens)
 	}
 }
+
+func TestResultModelName(t *testing.T) {
+	r := Result{ModelName: "claude-haiku-4-5-20251001"}
+	if r.ModelName != "claude-haiku-4-5-20251001" {
+		t.Errorf("ModelName = %q, want claude-haiku-4-5-20251001", r.ModelName)
+	}
+}

@@ -114,6 +114,7 @@ func (b *AiderBackend) Run(ctx context.Context, params RunParams) (*Result, erro
 	}
 
 	return &Result{
+		ModelName:    b.model,
 		Summary:      extractAiderSummary(out),
 		Iterations:   1,
 		InputTokens:  inputTokens,

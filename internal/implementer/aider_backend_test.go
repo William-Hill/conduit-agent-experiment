@@ -72,6 +72,10 @@ Tokens: 12.3k sent, 1.5k received. Cost: $0.00 message, $0.00 session.
 	if !strings.Contains(result.Summary, "abc1234") {
 		t.Errorf("Summary should include commit sha, got %q", result.Summary)
 	}
+	wantModel := "openrouter/qwen/qwen-2.5-coder-32b-instruct:free"
+	if result.ModelName != wantModel {
+		t.Errorf("ModelName = %q, want %q", result.ModelName, wantModel)
+	}
 }
 
 func TestAiderBackendRunAiderNonzeroExit(t *testing.T) {

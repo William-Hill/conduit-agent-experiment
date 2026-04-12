@@ -21,6 +21,7 @@ Do NOT explore the codebase. Do NOT read files unless a build fails. Just write 
 
 // Result holds the outcome of an implementer agent run.
 type Result struct {
+	ModelName           string // underlying model the backend ran against; populated by each backend
 	Summary             string
 	Iterations          int
 	InputTokens         int

@@ -106,6 +106,7 @@ func (b *AnthropicBackend) Run(ctx context.Context, params RunParams) (*Result, 
 	}
 
 	return &Result{
+		ModelName:           b.modelName,
 		Summary:             extractText(finalMsg),
 		Iterations:          runner.IterationCount(),
 		InputTokens:         int(totalInput),
