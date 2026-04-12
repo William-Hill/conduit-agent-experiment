@@ -26,6 +26,7 @@ var modelPrices = map[string]Price{
 	// issue #38 smoke test — qwen3-coder:free has 262K context which
 	// the planner's long narrative specs require.
 	"openrouter/qwen/qwen3-coder:free":                  {InputPerMTok: 0, OutputPerMTok: 0},
+	"openrouter/qwen/qwen3-coder-flash":                 {InputPerMTok: 0.195, OutputPerMTok: 0.975},
 	"openrouter/deepseek/deepseek-r1:free":              {InputPerMTok: 0, OutputPerMTok: 0},
 	"openrouter/meta-llama/llama-3.3-70b-instruct:free": {InputPerMTok: 0, OutputPerMTok: 0},
 }
