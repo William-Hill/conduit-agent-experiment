@@ -203,7 +203,7 @@ export OPENROUTER_API_KEY="sk-or-v1-…"
 
 ```bash
 IMPL_BACKEND=aider \
-IMPL_AIDER_MODEL="openrouter/qwen/qwen-2.5-coder-32b-instruct:free" \
+IMPL_AIDER_MODEL="openrouter/qwen/qwen3-coder:free" \
 OPENROUTER_API_KEY="sk-or-v1-…" \
   go run ./cmd/implementer
 ```

@@ -22,7 +22,7 @@ var _ Backend = (*AiderBackend)(nil)
 // "Tokens:" line.
 type AiderBackend struct {
 	openrouterKey string
-	model         string // e.g. "openrouter/qwen/qwen-2.5-coder-32b-instruct:free"
+	model         string // e.g. "openrouter/qwen/qwen3-coder:free"
 	aiderPath     string // path to aider binary; "aider" for PATH lookup
 }
 
@@ -33,7 +33,11 @@ func NewAiderBackend(openrouterKey, model, aiderPath string) *AiderBackend {
 		aiderPath = "aider"
 	}
 	if model == "" {
-		model = "openrouter/qwen/qwen-2.5-coder-32b-instruct:free"
+		// qwen3-coder:free has 262K context (vs. 32K on the older
+		// 2.5-coder-32b) which is needed to fit our planner's long
+		// narrative markdown plus aider's repo map. Confirmed live on
+		// the OpenRouter /models API as of the issue #38 smoke test.
+		model = "openrouter/qwen/qwen3-coder:free"
 	}
 	return &AiderBackend{
 		openrouterKey: openrouterKey,

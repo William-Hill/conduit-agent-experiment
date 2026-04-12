@@ -69,7 +69,7 @@ func TestCalculateCalls(t *testing.T) {
 
 func TestOpenRouterFreeTierPricing(t *testing.T) {
 	freeModels := []string{
-		"openrouter/qwen/qwen-2.5-coder-32b-instruct:free",
+		"openrouter/qwen/qwen3-coder:free",
 		"openrouter/deepseek/deepseek-r1:free",
 		"openrouter/meta-llama/llama-3.3-70b-instruct:free",
 	}

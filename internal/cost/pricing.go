@@ -22,7 +22,10 @@ var modelPrices = map[string]Price{
 	"claude-sonnet-4-6-20250514": {InputPerMTok: 3.00, OutputPerMTok: 15.00},
 	// OpenRouter free tier — 20 req/min, 200 req/day per model.
 	// Tracked as $0 so budget checks pass for free-tier experiments.
-	"openrouter/qwen/qwen-2.5-coder-32b-instruct:free":  {InputPerMTok: 0, OutputPerMTok: 0},
+	// Model IDs verified via OpenRouter's /v1/models API during the
+	// issue #38 smoke test — qwen3-coder:free has 262K context which
+	// the planner's long narrative specs require.
+	"openrouter/qwen/qwen3-coder:free":                  {InputPerMTok: 0, OutputPerMTok: 0},
 	"openrouter/deepseek/deepseek-r1:free":              {InputPerMTok: 0, OutputPerMTok: 0},
 	"openrouter/meta-llama/llama-3.3-70b-instruct:free": {InputPerMTok: 0, OutputPerMTok: 0},
 }
