@@ -1,6 +1,39 @@
 {
-  "updated_at": "2026-04-13T16:23:50Z",
+  "updated_at": "2026-04-13T22:01:01Z",
   "runs": [
+    {
+      "budget_exceeded": false,
+      "cache_creation_tokens": 16732,
+      "cache_read_tokens": 250980,
+      "code_review": {
+        "approved": false,
+        "build_passed": true,
+        "category": "vet",
+        "cost_usd": 0,
+        "input_tokens": 0,
+        "lint_errors_dropped": 0,
+        "lint_errors_kept": 0,
+        "lint_output": "",
+        "output_tokens": 0,
+        "retried": true,
+        "semantic_result": "",
+        "summary": "go vet failed",
+        "vet_passed": false
+      },
+      "estimated_cost_usd": 0.518037,
+      "input_tokens": 435782,
+      "issue_number": 1268,
+      "issue_title": "Write a guide about embedding Conduit",
+      "iterations": 30,
+      "model": "claude-haiku-4-5-20251001",
+      "output_tokens": 16451,
+      "plan_chars": 24738,
+      "summary": "Now I see - the provisioning service has an `Init` method for loading pipelines from a directory. But we need to change the approach for the embedded example. Let me update both files to use the correct pattern - we should parse the YAML directly and call Import. Let me look at an example of how to parse the YAML:",
+      "timestamp": "2026-04-13T22:00:18Z",
+      "run_id": 24368929276,
+      "status": "failure",
+      "duration_seconds": 293
+    },
     {
       "budget_exceeded": false,
       "cache_creation_tokens": 33800,
