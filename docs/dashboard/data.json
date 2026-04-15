@@ -1,6 +1,39 @@
 {
-  "updated_at": "2026-04-15T10:28:10Z",
+  "updated_at": "2026-04-15T16:16:30Z",
   "runs": [
+    {
+      "budget_exceeded": false,
+      "cache_creation_tokens": 25663,
+      "cache_read_tokens": 384945,
+      "code_review": {
+        "approved": false,
+        "build_passed": true,
+        "category": "vet",
+        "cost_usd": 0,
+        "input_tokens": 0,
+        "lint_errors_dropped": 0,
+        "lint_errors_kept": 0,
+        "lint_output": "",
+        "output_tokens": 0,
+        "retried": true,
+        "semantic_result": "",
+        "summary": "go vet failed",
+        "vet_passed": false
+      },
+      "estimated_cost_usd": 0.377773,
+      "input_tokens": 276733,
+      "issue_number": 1268,
+      "issue_title": "Write a guide about embedding Conduit",
+      "iterations": 30,
+      "model": "claude-haiku-4-5-20251001",
+      "output_tokens": 20208,
+      "plan_chars": 38471,
+      "summary": "Now I understand the actual API. Let me also check the pipeline structure and see if there's an AddConnector method on a different level:",
+      "timestamp": "2026-04-15T16:15:49Z",
+      "run_id": 24465219040,
+      "status": "failure",
+      "duration_seconds": 296
+    },
     {
       "budget_exceeded": false,
       "cache_creation_tokens": 17796,
