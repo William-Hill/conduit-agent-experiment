@@ -1,6 +1,39 @@
 {
-  "updated_at": "2026-05-06T22:11:21Z",
+  "updated_at": "2026-05-07T11:20:36Z",
   "runs": [
+    {
+      "budget_exceeded": false,
+      "cache_creation_tokens": 54941,
+      "cache_read_tokens": 598312,
+      "code_review": {
+        "approved": false,
+        "build_passed": false,
+        "category": "build",
+        "cost_usd": 0,
+        "input_tokens": 0,
+        "lint_errors_dropped": 0,
+        "lint_errors_kept": 0,
+        "lint_output": "",
+        "output_tokens": 0,
+        "retried": true,
+        "semantic_result": "",
+        "summary": "go build failed",
+        "vet_passed": false
+      },
+      "estimated_cost_usd": 0.164428,
+      "input_tokens": 75538,
+      "issue_number": 1268,
+      "issue_title": "Write a guide about embedding Conduit",
+      "iterations": 30,
+      "model": "claude-haiku-4-5-20251001",
+      "output_tokens": 17778,
+      "plan_chars": 31438,
+      "summary": "Now let me check the pipeline package to understand the Status field:",
+      "timestamp": "2026-05-07T11:19:36Z",
+      "run_id": 25492374163,
+      "status": "failure",
+      "duration_seconds": 373
+    },
     {
       "budget_exceeded": false,
       "cache_creation_tokens": 44845,
