@@ -1,6 +1,39 @@
 {
-  "updated_at": "2026-05-08T16:27:35Z",
+  "updated_at": "2026-05-08T22:11:23Z",
   "runs": [
+    {
+      "budget_exceeded": false,
+      "cache_creation_tokens": 35240,
+      "cache_read_tokens": 269305,
+      "code_review": {
+        "approved": false,
+        "build_passed": true,
+        "category": "lint",
+        "cost_usd": 0,
+        "input_tokens": 0,
+        "lint_errors_dropped": 0,
+        "lint_errors_kept": 0,
+        "lint_output": "golangci-lint run\n\nmake: golangci-lint: No such file or directory\nmake: *** [Makefile:41: lint] Error 127\n",
+        "output_tokens": 0,
+        "retried": true,
+        "semantic_result": "",
+        "summary": "lint failed with unclassifiable output",
+        "vet_passed": true
+      },
+      "estimated_cost_usd": 0.158744,
+      "input_tokens": 69319,
+      "issue_number": 1268,
+      "issue_title": "Write a guide about embedding Conduit",
+      "iterations": 23,
+      "model": "claude-haiku-4-5-20251001",
+      "output_tokens": 17885,
+      "plan_chars": 19088,
+      "summary": "Perfect! All files have been created successfully. Let me provide a summary of what was implemented:\n\n## Summary\n\nI have successfully created all the files specified in the implementation plan:\n\n### Files Created:\n\n1. **`docs/how-to-embed-conduit.md`** (10,974 bytes)\n   - Comprehensive markdown guide explaining how to embed Conduit in Go applications\n   - Covers key concepts: `Config`, `Runtime`, `Orchestrator`, and `ProvisionService`\n   - Includes step-by-step initialization instructions\n   - Demonstrates both file-based provisioning and programmatic pipeline management\n   - Explains custom database implementation and graceful shutdown handling\n\n2. **`examples/embed-conduit/main.go`** (3,780 bytes)\n   - Runnable Go application demonstrating embedded Conduit usage\n   - Shows configuration with in-memory database and disabled API\n   - Implements graceful shutdown using signal context\n   - Uses `ProvisionService.Init()` to load pipelines from YAML files\n   - Includes helpful comments and alternative code snippets for programmatic pipeline creation\n\n3. **`examples/embed-conduit/pipeline.yml`** (474 bytes)\n   - Sample pipeline configuration in YAML format\n   - Defines `my-embedded-pipeline` with:\n     - `builtin:generator` source connector (10 records)\n     - `builtin:logger` destination connector\n   - Ready to be consumed by the provisioning service\n\n### Build Status:\n✅ **Build successful** - `go build ./...` completed without errors\n✅ **All dependencies downloaded and resolved** - Conduit and related packages properly fetched\n\n### Files are ready for use:\n```\nexamples/embed-conduit/\n├── main.go\n└── pipeline.yml\n\ndocs/\n└── how-to-embed-conduit.md\n```\n\nThe implementation provides a complete guide and working example for embedding Conduit as a component within Go applications, supporting both declarative (YAML-based) and programmatic pipeline management approaches.",
+      "timestamp": "2026-05-08T22:10:21Z",
+      "run_id": 25581810981,
+      "status": "failure",
+      "duration_seconds": 333
+    },
     {
       "budget_exceeded": false,
       "cache_creation_tokens": 61457,
