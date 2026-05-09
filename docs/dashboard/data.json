@@ -1,6 +1,39 @@
 {
-  "updated_at": "2026-05-09T16:06:04Z",
+  "updated_at": "2026-05-09T22:02:25Z",
   "runs": [
+    {
+      "budget_exceeded": false,
+      "cache_creation_tokens": 40932,
+      "cache_read_tokens": 529019,
+      "code_review": {
+        "approved": false,
+        "build_passed": true,
+        "category": "vet",
+        "cost_usd": 0,
+        "input_tokens": 0,
+        "lint_errors_dropped": 0,
+        "lint_errors_kept": 0,
+        "lint_output": "",
+        "output_tokens": 0,
+        "retried": true,
+        "semantic_result": "",
+        "summary": "go vet failed",
+        "vet_passed": false
+      },
+      "estimated_cost_usd": 0.139448,
+      "input_tokens": 55288,
+      "issue_number": 1268,
+      "issue_title": "Write a guide about embedding Conduit",
+      "iterations": 30,
+      "model": "claude-haiku-4-5-20251001",
+      "output_tokens": 16832,
+      "plan_chars": 28136,
+      "summary": "Now let me check the PipelineOrchestrator to see the actual methods:",
+      "timestamp": "2026-05-09T22:01:23Z",
+      "run_id": 25612769296,
+      "status": "failure",
+      "duration_seconds": 417
+    },
     {
       "budget_exceeded": false,
       "cache_creation_tokens": 39585,
