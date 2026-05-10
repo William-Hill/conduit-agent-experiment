@@ -1,6 +1,39 @@
 {
-  "updated_at": "2026-05-10T16:05:54Z",
+  "updated_at": "2026-05-10T22:01:05Z",
   "runs": [
+    {
+      "budget_exceeded": false,
+      "cache_creation_tokens": 46509,
+      "cache_read_tokens": 602326,
+      "code_review": {
+        "approved": false,
+        "build_passed": false,
+        "category": "build",
+        "cost_usd": 0,
+        "input_tokens": 0,
+        "lint_errors_dropped": 0,
+        "lint_errors_kept": 0,
+        "lint_output": "",
+        "output_tokens": 0,
+        "retried": true,
+        "semantic_result": "",
+        "summary": "go build failed",
+        "vet_passed": false
+      },
+      "estimated_cost_usd": 0.18379,
+      "input_tokens": 104345,
+      "issue_number": 1268,
+      "issue_title": "Write a guide about embedding Conduit",
+      "iterations": 30,
+      "model": "claude-haiku-4-5-20251001",
+      "output_tokens": 15889,
+      "plan_chars": 25190,
+      "summary": "Now let me check the orchestrator methods more carefully to find the actual API:",
+      "timestamp": "2026-05-10T22:00:20Z",
+      "run_id": 25640818341,
+      "status": "failure",
+      "duration_seconds": 291
+    },
     {
       "budget_exceeded": false,
       "cache_creation_tokens": 49991,
@@ -1182,24 +1215,6 @@
       "run_id": 24167191811,
       "status": "success",
       "duration_seconds": 470
-    },
-    {
-      "budget_exceeded": false,
-      "cache_creation_tokens": 18187,
-      "cache_read_tokens": 272805,
-      "estimated_cost_usd": 0.389463,
-      "input_tokens": 235973,
-      "issue_number": 576,
-      "issue_title": "Error codes needs to be documented in Swagger",
-      "iterations": 15,
-      "model": "claude-haiku-4-5-20251001",
-      "output_tokens": 30698,
-      "plan_chars": 53700,
-      "summary": "Now I need to update the proto file to add the OpenAPI v2 annotation for UpdateDLQ and also import google.rpc.status. Let me do this carefully:",
-      "timestamp": "2026-04-09T01:09:24Z",
-      "run_id": 24166951604,
-      "status": "failure",
-      "duration_seconds": 308
     }
   ]
 }
