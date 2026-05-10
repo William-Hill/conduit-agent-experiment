@@ -1,6 +1,39 @@
 {
-  "updated_at": "2026-05-10T10:27:41Z",
+  "updated_at": "2026-05-10T16:05:54Z",
   "runs": [
+    {
+      "budget_exceeded": false,
+      "cache_creation_tokens": 49991,
+      "cache_read_tokens": 547095,
+      "code_review": {
+        "approved": false,
+        "build_passed": false,
+        "category": "build",
+        "cost_usd": 0,
+        "input_tokens": 0,
+        "lint_errors_dropped": 0,
+        "lint_errors_kept": 0,
+        "lint_output": "",
+        "output_tokens": 0,
+        "retried": true,
+        "semantic_result": "",
+        "summary": "go build failed",
+        "vet_passed": false
+      },
+      "estimated_cost_usd": 0.13761299999999999,
+      "input_tokens": 84618,
+      "issue_number": 1268,
+      "issue_title": "Write a guide about embedding Conduit",
+      "iterations": 30,
+      "model": "claude-haiku-4-5-20251001",
+      "output_tokens": 10599,
+      "plan_chars": 28908,
+      "summary": "Now I understand the issue. Let me check how logging is done:",
+      "timestamp": "2026-05-10T16:04:49Z",
+      "run_id": 25633245697,
+      "status": "failure",
+      "duration_seconds": 269
+    },
     {
       "budget_exceeded": false,
       "cache_creation_tokens": 56257,
