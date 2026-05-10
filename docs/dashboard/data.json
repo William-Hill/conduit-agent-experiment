@@ -1,6 +1,39 @@
 {
-  "updated_at": "2026-05-09T22:02:25Z",
+  "updated_at": "2026-05-10T10:27:41Z",
   "runs": [
+    {
+      "budget_exceeded": false,
+      "cache_creation_tokens": 56257,
+      "cache_read_tokens": 605762,
+      "code_review": {
+        "approved": false,
+        "build_passed": true,
+        "category": "lint",
+        "cost_usd": 0,
+        "input_tokens": 0,
+        "lint_errors_dropped": 0,
+        "lint_errors_kept": 0,
+        "lint_output": "golangci-lint run\n\nmake: golangci-lint: No such file or directory\nmake: *** [Makefile:41: lint] Error 127\n",
+        "output_tokens": 0,
+        "retried": true,
+        "semantic_result": "",
+        "summary": "lint failed with unclassifiable output",
+        "vet_passed": true
+      },
+      "estimated_cost_usd": 0.216241,
+      "input_tokens": 99976,
+      "issue_number": 1268,
+      "issue_title": "Write a guide about embedding Conduit",
+      "iterations": 27,
+      "model": "claude-haiku-4-5-20251001",
+      "output_tokens": 23253,
+      "plan_chars": 29135,
+      "summary": "Excellent! Let me create a summary of what was written:\n\n## Summary\n\nI have successfully implemented the embedding Conduit guide and example according to the implementation plan. Here are the files created:\n\n### 1. **`examples/embedded-conduit/go.mod`**\n   - Initializes a new Go module for the example application\n   - Declares dependencies on `conduit-commons` v0.2.0 and `conduit` v0.8.0\n   - Uses a `replace` directive to point to the local conduit repository (../../)\n\n### 2. **`examples/embedded-conduit/main.go`**\n   - Complete, runnable example demonstrating how to embed Conduit in a Go application\n   - **6 main sections:**\n     1. **Configuration**: Initializes Conduit with custom settings (disabled API, in-memory database)\n     2. **Runtime Creation**: Creates the Conduit Runtime instance\n     3. **Graceful Shutdown**: Sets up OS signal handling for clean shutdown\n     4. **Runtime Execution**: Starts the runtime in a goroutine and waits for it to be ready\n     5. **Pipeline Management**: Uses the Orchestrator to programmatically create a pipeline with a generator source and log destination\n     6. **Pipeline Lifecycle**: Demonstrates graceful stopping with timeout and fallback to force stop\n\n### 3. **`docs/embedding-conduit.md`**\n   - Comprehensive guide (16KB+) covering all aspects of embedding Conduit\n   - **Key sections:**\n     - Core Concepts (Runtime object, Configuration)\n     - Step-by-step walkthrough of the example application\n     - Configuration for embedding with database driver options\n     - Runtime lifecycle and graceful shutdown patterns\n     - Programmatic pipeline management with Orchestrator\n     - Alternative: Provisioning from configuration files\n     - Verification steps with expected output\n\n### Build Status\n✅ **Build successful** - `go build ./...` completes without errors\n\nAll files have been created with exact content as specified in the implementation plan, and the project builds successfully.",
+      "timestamp": "2026-05-10T10:26:35Z",
+      "run_id": 25626204721,
+      "status": "failure",
+      "duration_seconds": 382
+    },
     {
       "budget_exceeded": false,
       "cache_creation_tokens": 40932,
