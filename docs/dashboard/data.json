@@ -1,6 +1,39 @@
 {
-  "updated_at": "2026-05-10T22:01:05Z",
+  "updated_at": "2026-05-11T12:25:18Z",
   "runs": [
+    {
+      "budget_exceeded": false,
+      "cache_creation_tokens": 64396,
+      "cache_read_tokens": 703223,
+      "code_review": {
+        "approved": false,
+        "build_passed": false,
+        "category": "build",
+        "cost_usd": 0,
+        "input_tokens": 0,
+        "lint_errors_dropped": 0,
+        "lint_errors_kept": 0,
+        "lint_output": "",
+        "output_tokens": 0,
+        "retried": true,
+        "semantic_result": "",
+        "summary": "go build failed",
+        "vet_passed": false
+      },
+      "estimated_cost_usd": 0.282975,
+      "input_tokens": 151415,
+      "issue_number": 1268,
+      "issue_title": "Write a guide about embedding Conduit",
+      "iterations": 30,
+      "model": "claude-haiku-4-5-20251001",
+      "output_tokens": 26312,
+      "plan_chars": 25312,
+      "summary": "Now I understand. The `config.Pipeline` structure is flatter - it has `Connectors` slice and `Processors` slice, not `Source`, `Destination` directly. Let me update the files to match the actual API:",
+      "timestamp": "2026-05-11T12:24:26Z",
+      "run_id": 25669646940,
+      "status": "failure",
+      "duration_seconds": 363
+    },
     {
       "budget_exceeded": false,
       "cache_creation_tokens": 46509,
@@ -1196,25 +1229,6 @@
       "run_id": 24170172426,
       "status": "success",
       "duration_seconds": 213
-    },
-    {
-      "budget_exceeded": false,
-      "cache_creation_tokens": 8582,
-      "cache_read_tokens": 128730,
-      "estimated_cost_usd": 0.281017,
-      "input_tokens": 205097,
-      "issue_number": 576,
-      "issue_title": "Error codes needs to be documented in Swagger",
-      "iterations": 15,
-      "model": "claude-haiku-4-5-20251001",
-      "output_tokens": 15184,
-      "plan_chars": 24215,
-      "pr_url": "https://github.com/ConduitIO/conduit/pull/2455",
-      "summary": "Let me list the directory to see what files exist:",
-      "timestamp": "2026-04-09T01:20:01Z",
-      "run_id": 24167191811,
-      "status": "success",
-      "duration_seconds": 470
     }
   ]
 }
