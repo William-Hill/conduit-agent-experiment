@@ -1,6 +1,39 @@
 {
-  "updated_at": "2026-05-11T12:25:18Z",
+  "updated_at": "2026-05-11T17:38:08Z",
   "runs": [
+    {
+      "budget_exceeded": false,
+      "cache_creation_tokens": 46891,
+      "cache_read_tokens": 651947,
+      "code_review": {
+        "approved": false,
+        "build_passed": true,
+        "category": "lint",
+        "cost_usd": 0,
+        "input_tokens": 0,
+        "lint_errors_dropped": 0,
+        "lint_errors_kept": 0,
+        "lint_output": "golangci-lint run\n\nmake: golangci-lint: No such file or directory\nmake: *** [Makefile:41: lint] Error 127\n",
+        "output_tokens": 0,
+        "retried": true,
+        "semantic_result": "",
+        "summary": "lint failed with unclassifiable output",
+        "vet_passed": true
+      },
+      "estimated_cost_usd": 0.231562,
+      "input_tokens": 97632,
+      "issue_number": 1268,
+      "issue_title": "Write a guide about embedding Conduit",
+      "iterations": 30,
+      "model": "claude-haiku-4-5-20251001",
+      "output_tokens": 26786,
+      "plan_chars": 30372,
+      "summary": "Perfect! All files have been created successfully. Let me verify the build one more time to ensure everything compiles:",
+      "timestamp": "2026-05-11T17:36:23Z",
+      "run_id": 25686191660,
+      "status": "failure",
+      "duration_seconds": 501
+    },
     {
       "budget_exceeded": false,
       "cache_creation_tokens": 64396,
@@ -1210,25 +1243,6 @@
       "run_id": 24170175322,
       "status": "success",
       "duration_seconds": 124
-    },
-    {
-      "budget_exceeded": false,
-      "cache_creation_tokens": 11817,
-      "cache_read_tokens": 177255,
-      "estimated_cost_usd": 0.295707,
-      "input_tokens": 213177,
-      "issue_number": 1268,
-      "issue_title": "Write a guide about embedding Conduit",
-      "iterations": 15,
-      "model": "claude-haiku-4-5-20251001",
-      "output_tokens": 16506,
-      "plan_chars": 36045,
-      "pr_url": "https://github.com/ConduitIO/conduit/pull/2457",
-      "summary": "Now I understand the structure. Let me fix the main.go file based on the actual API:",
-      "timestamp": "2026-04-09T03:08:37Z",
-      "run_id": 24170172426,
-      "status": "success",
-      "duration_seconds": 213
     }
   ]
 }
