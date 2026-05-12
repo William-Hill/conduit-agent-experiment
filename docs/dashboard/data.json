@@ -1,6 +1,39 @@
 {
-  "updated_at": "2026-05-12T11:32:45Z",
+  "updated_at": "2026-05-12T17:27:37Z",
   "runs": [
+    {
+      "budget_exceeded": false,
+      "cache_creation_tokens": 60738,
+      "cache_read_tokens": 727730,
+      "code_review": {
+        "approved": false,
+        "build_passed": false,
+        "category": "build",
+        "cost_usd": 0,
+        "input_tokens": 0,
+        "lint_errors_dropped": 0,
+        "lint_errors_kept": 0,
+        "lint_output": "",
+        "output_tokens": 0,
+        "retried": true,
+        "semantic_result": "",
+        "summary": "go build failed",
+        "vet_passed": false
+      },
+      "estimated_cost_usd": 0.24172299999999997,
+      "input_tokens": 103138,
+      "issue_number": 1268,
+      "issue_title": "Write a guide about embedding Conduit",
+      "iterations": 30,
+      "model": "claude-haiku-4-5-20251001",
+      "output_tokens": 27717,
+      "plan_chars": 33853,
+      "summary": "Let me check the runtime.go file:",
+      "timestamp": "2026-05-12T17:26:42Z",
+      "run_id": 25750531037,
+      "status": "failure",
+      "duration_seconds": 463
+    },
     {
       "budget_exceeded": false,
       "cache_creation_tokens": 57135,
@@ -1272,24 +1305,6 @@
       "run_id": 24201154409,
       "status": "failure",
       "duration_seconds": 166
-    },
-    {
-      "budget_exceeded": false,
-      "cache_creation_tokens": 14825,
-      "cache_read_tokens": 222375,
-      "estimated_cost_usd": 0.3006,
-      "input_tokens": 246775,
-      "issue_number": 1268,
-      "issue_title": "Write a guide about embedding Conduit",
-      "iterations": 15,
-      "model": "claude-haiku-4-5-20251001",
-      "output_tokens": 10765,
-      "plan_chars": 42980,
-      "summary": "Let me check the connector code:",
-      "timestamp": "2026-04-09T10:23:28Z",
-      "run_id": 24185014048,
-      "status": "failure",
-      "duration_seconds": 288
     }
   ]
 }
