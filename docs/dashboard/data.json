@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-06-08T22:45:54Z",
+  "updated_at": "2026-06-09T12:14:17Z",
   "runs": [
     {
       "budget_exceeded": false,
@@ -726,39 +726,6 @@
       "run_id": 25463690014,
       "status": "failure",
       "duration_seconds": 416
-    },
-    {
-      "budget_exceeded": false,
-      "cache_creation_tokens": 48289,
-      "cache_read_tokens": 755107,
-      "code_review": {
-        "approved": false,
-        "build_passed": false,
-        "category": "build",
-        "cost_usd": 0,
-        "input_tokens": 0,
-        "lint_errors_dropped": 0,
-        "lint_errors_kept": 0,
-        "lint_output": "",
-        "output_tokens": 0,
-        "retried": true,
-        "semantic_result": "",
-        "summary": "go build failed",
-        "vet_passed": false
-      },
-      "estimated_cost_usd": 0.287256,
-      "input_tokens": 109631,
-      "issue_number": 1268,
-      "issue_title": "Write a guide about embedding Conduit",
-      "iterations": 30,
-      "model": "claude-haiku-4-5-20251001",
-      "output_tokens": 35525,
-      "plan_chars": 47224,
-      "summary": "Perfect! Let me verify the main.go file has the correct structure:",
-      "timestamp": "2026-05-06T16:57:38Z",
-      "run_id": 25448853964,
-      "status": "failure",
-      "duration_seconds": 498
     }
   ]
 }
