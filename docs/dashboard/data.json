@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-06-09T22:44:16Z",
+  "updated_at": "2026-06-10T12:33:15Z",
   "runs": [
     {
       "budget_exceeded": false,
@@ -627,39 +627,6 @@
       "run_id": 25524829896,
       "status": "failure",
       "duration_seconds": 300
-    },
-    {
-      "budget_exceeded": false,
-      "cache_creation_tokens": 31369,
-      "cache_read_tokens": 593038,
-      "code_review": {
-        "approved": false,
-        "build_passed": true,
-        "category": "lint",
-        "cost_usd": 0,
-        "input_tokens": 0,
-        "lint_errors_dropped": 0,
-        "lint_errors_kept": 0,
-        "lint_output": "golangci-lint run\n\nmake: golangci-lint: No such file or directory\nmake: *** [Makefile:41: lint] Error 127\n",
-        "output_tokens": 0,
-        "retried": true,
-        "semantic_result": "",
-        "summary": "lint failed with unclassifiable output",
-        "vet_passed": true
-      },
-      "estimated_cost_usd": 0.196629,
-      "input_tokens": 70984,
-      "issue_number": 1268,
-      "issue_title": "Write a guide about embedding Conduit",
-      "iterations": 30,
-      "model": "claude-haiku-4-5-20251001",
-      "output_tokens": 25129,
-      "plan_chars": 29936,
-      "summary": "Let me use the correct approach to build from the example directory:",
-      "timestamp": "2026-05-07T17:07:01Z",
-      "run_id": 25510175092,
-      "status": "failure",
-      "duration_seconds": 492
     }
   ]
 }
