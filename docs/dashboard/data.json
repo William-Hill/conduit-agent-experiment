@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-06-10T12:33:15Z",
+  "updated_at": "2026-06-10T18:11:51Z",
   "runs": [
     {
       "budget_exceeded": false,
@@ -594,39 +594,6 @@
       "run_id": 25566652033,
       "status": "failure",
       "duration_seconds": 307
-    },
-    {
-      "budget_exceeded": false,
-      "cache_creation_tokens": 53918,
-      "cache_read_tokens": 555561,
-      "code_review": {
-        "approved": false,
-        "build_passed": false,
-        "category": "build",
-        "cost_usd": 0,
-        "input_tokens": 0,
-        "lint_errors_dropped": 0,
-        "lint_errors_kept": 0,
-        "lint_output": "",
-        "output_tokens": 0,
-        "retried": true,
-        "semantic_result": "",
-        "summary": "go build failed",
-        "vet_passed": false
-      },
-      "estimated_cost_usd": 0.15681699999999998,
-      "input_tokens": 94152,
-      "issue_number": 1268,
-      "issue_title": "Write a guide about embedding Conduit",
-      "iterations": 30,
-      "model": "claude-haiku-4-5-20251001",
-      "output_tokens": 12533,
-      "plan_chars": 21533,
-      "summary": "Perfect! Now I understand. The proper way is to use `Import` with a parsed config. Let me check how the examples work - they use the Orchestrator API. Let me look at the examples directory structure:",
-      "timestamp": "2026-05-07T22:14:49Z",
-      "run_id": 25524829896,
-      "status": "failure",
-      "duration_seconds": 300
     }
   ]
 }
