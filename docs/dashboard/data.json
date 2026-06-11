@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-06-10T22:56:53Z",
+  "updated_at": "2026-06-11T12:53:30Z",
   "runs": [
     {
       "budget_exceeded": false,
@@ -561,39 +561,6 @@
       "run_id": 25581810981,
       "status": "failure",
       "duration_seconds": 333
-    },
-    {
-      "budget_exceeded": false,
-      "cache_creation_tokens": 61457,
-      "cache_read_tokens": 622386,
-      "code_review": {
-        "approved": false,
-        "build_passed": true,
-        "category": "vet",
-        "cost_usd": 0,
-        "input_tokens": 0,
-        "lint_errors_dropped": 0,
-        "lint_errors_kept": 0,
-        "lint_output": "",
-        "output_tokens": 0,
-        "retried": true,
-        "semantic_result": "",
-        "summary": "go vet failed",
-        "vet_passed": false
-      },
-      "estimated_cost_usd": 0.19461699999999998,
-      "input_tokens": 116927,
-      "issue_number": 1268,
-      "issue_title": "Write a guide about embedding Conduit",
-      "iterations": 30,
-      "model": "claude-haiku-4-5-20251001",
-      "output_tokens": 15538,
-      "plan_chars": 15833,
-      "summary": "",
-      "timestamp": "2026-05-08T16:26:28Z",
-      "run_id": 25566652033,
-      "status": "failure",
-      "duration_seconds": 307
     }
   ]
 }
