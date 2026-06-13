@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-06-13T11:26:50Z",
+  "updated_at": "2026-06-13T16:24:21Z",
   "runs": [
     {
       "budget_exceeded": false,
@@ -330,39 +330,6 @@
       "run_id": 25669646940,
       "status": "failure",
       "duration_seconds": 363
-    },
-    {
-      "budget_exceeded": false,
-      "cache_creation_tokens": 46509,
-      "cache_read_tokens": 602326,
-      "code_review": {
-        "approved": false,
-        "build_passed": false,
-        "category": "build",
-        "cost_usd": 0,
-        "input_tokens": 0,
-        "lint_errors_dropped": 0,
-        "lint_errors_kept": 0,
-        "lint_output": "",
-        "output_tokens": 0,
-        "retried": true,
-        "semantic_result": "",
-        "summary": "go build failed",
-        "vet_passed": false
-      },
-      "estimated_cost_usd": 0.18379,
-      "input_tokens": 104345,
-      "issue_number": 1268,
-      "issue_title": "Write a guide about embedding Conduit",
-      "iterations": 30,
-      "model": "claude-haiku-4-5-20251001",
-      "output_tokens": 15889,
-      "plan_chars": 25190,
-      "summary": "Now let me check the orchestrator methods more carefully to find the actual API:",
-      "timestamp": "2026-05-10T22:00:20Z",
-      "run_id": 25640818341,
-      "status": "failure",
-      "duration_seconds": 291
     }
   ]
 }
