@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-06-14T16:45:49Z",
+  "updated_at": "2026-06-14T22:20:28Z",
   "runs": [
     {
       "budget_exceeded": false,
@@ -198,39 +198,6 @@
       "run_id": 25750531037,
       "status": "failure",
       "duration_seconds": 463
-    },
-    {
-      "budget_exceeded": false,
-      "cache_creation_tokens": 57135,
-      "cache_read_tokens": 663820,
-      "code_review": {
-        "approved": false,
-        "build_passed": true,
-        "category": "lint",
-        "cost_usd": 0,
-        "input_tokens": 0,
-        "lint_errors_dropped": 0,
-        "lint_errors_kept": 0,
-        "lint_output": "golangci-lint run\n\nmake: golangci-lint: No such file or directory\nmake: *** [Makefile:41: lint] Error 127\n",
-        "output_tokens": 0,
-        "retried": true,
-        "semantic_result": "",
-        "summary": "lint failed with unclassifiable output",
-        "vet_passed": true
-      },
-      "estimated_cost_usd": 0.25413399999999997,
-      "input_tokens": 108884,
-      "issue_number": 1268,
-      "issue_title": "Write a guide about embedding Conduit",
-      "iterations": 28,
-      "model": "claude-haiku-4-5-20251001",
-      "output_tokens": 29050,
-      "plan_chars": 26585,
-      "summary": "Excellent! Everything has been successfully implemented. Let me provide a summary:\n\n## Summary\n\nI have successfully implemented the embedding guide and example as specified. Here's what was created:\n\n### Files Written:\n\n1. **`docs/how-to-embed-conduit.md`** (14,910 bytes)\n   - Comprehensive guide explaining why to embed Conduit\n   - Step-by-step initialization instructions for `conduit.NewRuntime`\n   - Detailed configuration documentation for `conduit.Config`\n   - Sections on managing pipelines programmatically with the Orchestrator\n   - Instructions for provisioning pipelines from YAML files using ProvisionService\n   - Reference to the runnable example in `examples/embed-conduit`\n   - Verification instructions\n\n2. **`examples/embed-conduit/main.go`** (5,699 bytes)\n   - Complete, runnable example application\n   - Configures Conduit with an in-memory database and disabled API\n   - Creates temporary directories and files for source/destination data\n   - Dynamically generates a pipeline YAML configuration\n   - Initializes and runs the Conduit runtime in a goroutine\n   - Provisions pipelines from the generated YAML\n   - Waits for graceful shutdown (SIGINT/SIGTERM)\n   - Verifies data processing by checking the destination file\n   - Cleans up temporary files on exit\n\n3. **`examples/embed-conduit/README.md`** (3,368 bytes)\n   - Clear overview of how the example works\n   - Step-by-step execution instructions\n   - Expected output sample\n   - Troubleshooting guidance\n\n### Build Verification:\n✅ `go build ./...` - Successful (all dependencies downloaded and compiled)\n✅ `go build ./examples/embed-conduit` - Successful (example builds correctly)\n\nAll files follow the exact specifications provided and are ready for use. The implementation demonstrates the complete workflow for embedding Conduit in a Go application, from initialization through data processing and graceful shutdown.",
-      "timestamp": "2026-05-12T11:31:30Z",
-      "run_id": 25731317681,
-      "status": "failure",
-      "duration_seconds": 422
     }
   ]
 }
