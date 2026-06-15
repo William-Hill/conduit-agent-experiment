@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-06-14T22:20:28Z",
+  "updated_at": "2026-06-15T15:25:42Z",
   "runs": [
     {
       "budget_exceeded": false,
@@ -165,39 +165,6 @@
       "run_id": 25765532537,
       "status": "failure",
       "duration_seconds": 464
-    },
-    {
-      "budget_exceeded": false,
-      "cache_creation_tokens": 60738,
-      "cache_read_tokens": 727730,
-      "code_review": {
-        "approved": false,
-        "build_passed": false,
-        "category": "build",
-        "cost_usd": 0,
-        "input_tokens": 0,
-        "lint_errors_dropped": 0,
-        "lint_errors_kept": 0,
-        "lint_output": "",
-        "output_tokens": 0,
-        "retried": true,
-        "semantic_result": "",
-        "summary": "go build failed",
-        "vet_passed": false
-      },
-      "estimated_cost_usd": 0.24172299999999997,
-      "input_tokens": 103138,
-      "issue_number": 1268,
-      "issue_title": "Write a guide about embedding Conduit",
-      "iterations": 30,
-      "model": "claude-haiku-4-5-20251001",
-      "output_tokens": 27717,
-      "plan_chars": 33853,
-      "summary": "Let me check the runtime.go file:",
-      "timestamp": "2026-05-12T17:26:42Z",
-      "run_id": 25750531037,
-      "status": "failure",
-      "duration_seconds": 463
     }
   ]
 }
