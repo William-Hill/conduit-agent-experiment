@@ -92,9 +92,8 @@ configs/           # YAML configuration
 
 ## CI / Automated Runs
 
-The pipeline can run autonomously via GitHub Actions (see [ADR 006](docs/adr/006-pipeline-deployment-github-actions.md)):
+The pipeline runs on request through GitHub Actions (see [ADR 006](docs/adr/006-pipeline-deployment-github-actions.md)). It has no automatic schedule.
 
-- **Weekly cron:** Runs every Monday at 9am UTC
 - **Manual dispatch:** Trigger from the Actions tab with optional issue number, HITL mode, and model override
 - **Event-driven:** Responds to `repository_dispatch` events for integration with external triggers
 
